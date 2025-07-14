@@ -949,23 +949,18 @@ void buttons() {
         speed = -maxspeed;
     }
 
-    // Sprinting
-    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) {
-        speed *= 3.0f;
-    }
-
     // Strafing with comma (left) and period (right)
     if (IsKeyDown(KEY_PERIOD)) {
-        // perpendicular left
-        // px -= pdy * maxspeed * dt;
-        // py += pdx * maxspeed * dt;
         strafespeed = -maxspeed;
     }
     if (IsKeyDown(KEY_COMMA)) {
-        // perpendicular right
         strafespeed = maxspeed;
-        // px += pdy * maxspeed * dt;
-        // py -= pdx * maxspeed * dt;
+    }
+
+    // Sprinting
+    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) {
+        speed *= 3.0f;
+        strafespeed *= 2.5f;
     }
 
     // Toggle map view
@@ -1071,6 +1066,9 @@ void playerMovement() {
     float next_px = px + moveX;
     float next_py = py + moveY;
 
+    next_px += (pdy * strafespeed * dt);
+    next_py -= (pdx * strafespeed * dt);
+
     checkInteract(px, py);
 
     // Check X movement
@@ -1082,9 +1080,6 @@ void playerMovement() {
     if (!checkCollision(px, next_py + radius) && !checkCollision(px, next_py - radius)) {
         py = next_py;
     }
-
-    px += pdy * strafespeed * dt;
-    py -= pdx * strafespeed * dt;
 }
 
 int main(void) {
