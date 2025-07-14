@@ -16,3 +16,5 @@ my compile string
 gcc main.c -o jcwolf.exe -Iinclude -Llib -lraylib -lgdi32 -lwinmm
 
 just add all wl6 game files next to your exe and youre good to go!
+
+<img width="1920" height="1018" alt="image" src="https://github.com/user-attachments/assets/d10312bf-18e3-44e9-ac58-9ce9e09bf5a1" />
