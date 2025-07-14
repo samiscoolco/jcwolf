@@ -67,6 +67,7 @@ RenderTexture2D renderTex;
 
 float px, py, pa, pdx, pdy;
 float speed;
+float strafespeed;
 float maxspeed;
 float turnspeed;
 float dt;
@@ -80,10 +81,10 @@ bool shooting;
 int mapS = 64;
 int mapX = 64, mapY = 64;
 int *map;
+int *map_obj;
 
 Texture2D spTex[125];
 Color *walltextures[125];
-
 typedef struct {
     int type;       // static, key, enemy
     int state;      // on off
@@ -92,6 +93,17 @@ typedef struct {
     int dist;
 } sprite;
 
+typedef struct {
+    int type;
+    uint8_t state;
+    short state2;
+    short state3;
+    short state4;
+    sprite *mySpriteRef;
+    bool solid;
+} interactable;
+
+interactable *interactables;
 sprite sp[255];
 sprite spStatic[255];
 
@@ -186,16 +198,13 @@ void drawDoors() {
     for (int y = 0; y < mapY; y++) {
         for (int x = 0; x < mapX; x++) {
             int i = y * mapX + x;
-            int tile = map[i];
-            if (tile != 90 && tile != 91) continue;
+            // change to pointer
+            interactable tile = interactables[i];
+            if (tile.type != 90 && tile.type != 91) continue;
 
-            bool vertical = (tile == 90);
+            bool vertical = (tile.type == 90);
             float doorX = x * 64 + 32;
             float doorY = y * 64 + 32;
-
-            // vert/hor doors
-            // doorX += doorOpenTest;
-            doorY += doorOpenTest;
 
             // Angle to center of door
             float dx = doorX - px;
@@ -243,7 +252,7 @@ void drawDoors() {
 
                 float tx = vertical ? (hitY - (y * 64)) : (hitX - (x * 64));
                 int texX = (int)(tx / 64.0f * 64.0f);
-                texX -= doorOpenTest;
+                texX += tile.state2;
                 if (texX < 0) {
                     continue;
                 }
@@ -396,7 +405,7 @@ void CA_RLEWexpand(word *source, word *dest, long length, word rlewtag) {
     }
 }
 
-int *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int map_number) {
+void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int map_number) {
     FILE *fhead = fopen(maphead_path, "rb");
     FILE *fmap = fopen(gamemaps_path, "rb");
     if (!fhead || !fmap) {
@@ -410,10 +419,6 @@ int *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int ma
     fread(maphead.headerOffsets, sizeof(long), NUMMAPS, fhead);
 
     long offset = maphead.headerOffsets[map_number];
-    if (offset <= 0) {
-        printf("Invalid map offset.\n");
-        return NULL;
-    }
 
     // Read map header
     fseek(fmap, offset, SEEK_SET);
@@ -440,12 +445,22 @@ int *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int ma
     CA_RLEWexpand(rlew_source, rlew_output, PLANESIZE * 2, maphead.RLEWtag);
 
     // Copy to int[]
-    int *final_map = malloc(PLANESIZE * sizeof(int));
+    map = malloc(PLANESIZE * sizeof(int));
+    interactables = malloc(PLANESIZE * sizeof(interactable));
     for (int i = 0; i < PLANESIZE; i++) {
         if (rlew_output[i] <= 92) {
-            final_map[i] = rlew_output[i];
+            map[i] = rlew_output[i];
+            if (rlew_output[i] == 90 || rlew_output[i] == 91) {
+                printf("asdf %d", i);
+                interactables[i].type = rlew_output[i];
+                interactables[i].state = 0;
+                interactables[i].state2 = 0;
+                interactables[i].state3 = 0;
+                interactables[i].solid = true;
+            }
         } else {
-            final_map[i] = 0;
+            map[i] = 0;
+            interactables[i].type = 0;
         }
     }
 
@@ -454,8 +469,6 @@ int *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int ma
     free(rlew_output);
     fclose(fhead);
     fclose(fmap);
-
-    return final_map;
 }
 
 int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int map_number, float *opx, float *opy, float *opa) {
@@ -472,10 +485,6 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
     fread(maphead.headerOffsets, sizeof(long), NUMMAPS, fhead);
 
     long offset = maphead.headerOffsets[map_number];
-    if (offset <= 0) {
-        printf("Invalid map offset.\n");
-        return NULL;
-    }
 
     // Read map header
     fseek(fmap, offset, SEEK_SET);
@@ -505,9 +514,12 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
     int face;
     int curP = 0;
     int startP = 0;
-    // int *final_map = malloc(PLANESIZE * sizeof(int));
+    int *final_map = malloc(PLANESIZE * sizeof(int));
+
     for (int i = 0; i < PLANESIZE; i++) {
         uint8_t tile = rlew_output[i];
+        final_map[i] = rlew_output[i];
+
         if (tile >= 19 && tile <= 22) {
             face = tile;
             startP = curP;
@@ -546,21 +558,22 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
         curP++;
     }
 
-    int startX = startP % 64;
-    int startY = startP / 64;
-
     free(compressed);
     free(carmack_output);
     free(rlew_output);
     fclose(fhead);
     fclose(fmap);
+
+    int startX = startP % 64;
+    int startY = startP / 64;
+
     *opx = (float)startX * 64;
     *opy = (float)startY * 64;
     *opa = (float)(face - 19) * (PI / 2);
 
     // adjust for this engines quirks
     *opa = *opa - (PI / 2);
-    return 0;
+    return final_map;
 }
 
 void LoadPalette() {
@@ -883,8 +896,8 @@ void LoadSprites() {
 
 void LoadMapPlanes(uint8_t levelnum) {
     printf("\nloading map data for level %d\n", levelnum + 1);
-    map = load_map_plane0("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum);
-    load_map_plane1("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum, &px, &py, &pa);
+    load_map_plane0("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum);
+    map_obj = load_map_plane1("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum, &px, &py, &pa);
 }
 
 void init() {
@@ -926,6 +939,7 @@ void buttons() {
     pdy = sin(pa);
 
     // Base movement speed
+    strafespeed = 0;
     speed = 0;
 
     // Forward/Backward
@@ -943,13 +957,15 @@ void buttons() {
     // Strafing with comma (left) and period (right)
     if (IsKeyDown(KEY_PERIOD)) {
         // perpendicular left
-        px -= pdy * maxspeed * dt;
-        py += pdx * maxspeed * dt;
+        // px -= pdy * maxspeed * dt;
+        // py += pdx * maxspeed * dt;
+        strafespeed = -maxspeed;
     }
     if (IsKeyDown(KEY_COMMA)) {
         // perpendicular right
-        px += pdy * maxspeed * dt;
-        py -= pdx * maxspeed * dt;
+        strafespeed = maxspeed;
+        // px += pdy * maxspeed * dt;
+        // py -= pdx * maxspeed * dt;
     }
 
     // Toggle map view
@@ -978,30 +994,97 @@ void buttons() {
         renderHeight += 50;
         renderWidth += 80;
         renderTex = LoadRenderTexture(renderWidth, renderHeight);
-        printf("New Reso %dx%d\n", renderWidth, renderHeight);
+        printf("\nNew Reso %dx%d\n", renderWidth, renderHeight);
+    }
+}
+
+void checkInteract(float x, float y) {
+    int tileX = ((int)px + pdx * 64) / 64;
+    int tileY = ((int)py + pdy * 64) / 64;
+
+    int mapxy = tileY * mapX + tileX;
+    // int tile = map[mapxy];
+
+    if (IsKeyDown(KEY_SPACE)) {
+        // printf("\n%d\n", tile);
+        // map[mapxy] = 1;
+
+        if (interactables[mapxy].state != 1) {
+            interactables[mapxy].state = 1;
+        }
+    }
+}
+
+bool checkCollision(float x, float y) {
+    int tileX = (int)x / 64;
+    int tileY = (int)y / 64;
+
+    int mapxy = tileY * mapX + tileX;
+    int tile = map[mapxy];
+
+    // === Customize this logic ===
+    if (tile >= 1 && tile < AREATILE) {
+        return true;  // wall
+    }
+
+    // Example: doors are tile 90-91
+    if (tile == 90 || tile == 91) {
+        return interactables[mapxy].solid;
+    }
+
+    return false;  // No collision
+}
+
+void updateInteractibles() {
+    for (int i = 0; i < PLANESIZE; i++) {
+        switch (interactables[i].type) {
+            // door logics
+            case 90:
+            case 91:
+                if (interactables[i].state == 1 && interactables[i].state3 == 0) {
+                    interactables[i].state2 += 1;
+                    interactables[i].solid = false;
+                    if (interactables[i].state2 >= 64) {
+                        interactables[i].state = 0;
+                        interactables[i].state3 = 1;
+                    }
+                }
+                if (interactables[i].state == 1 && interactables[i].state3 == 1) {
+                    interactables[i].state2 -= 1;
+                    interactables[i].solid = true;
+                    if (interactables[i].state2 <= 0) {
+                        interactables[i].state = 0;
+                        interactables[i].state3 = 0;
+                    }
+                }
+            default:
+                continue;
+        }
     }
 }
 
 void playerMovement() {
     float radius = 12.0f;
-    float next_px = px + pdx * speed * dt;
-    float next_py = py + pdy * speed * dt;
+    float moveX = pdx * speed * dt;
+    float moveY = pdy * speed * dt;
 
-    // Check X movement with buffer
-    int mx1 = (int)(next_px + radius) / 64;
-    int mx2 = (int)(next_px - radius) / 64;
-    int my = (int)(py) / 64;
-    if (map[my * mapX + mx1] < 1 && map[my * mapX + mx2] < 1) {
+    float next_px = px + moveX;
+    float next_py = py + moveY;
+
+    checkInteract(px, py);
+
+    // Check X movement
+    if (!checkCollision(next_px + radius, py) && !checkCollision(next_px - radius, py)) {
         px = next_px;
     }
 
-    // Check Y movement with buffer
-    int my1 = (int)(next_py + radius) / 64;
-    int my2 = (int)(next_py - radius) / 64;
-    int mx = (int)(px) / 64;
-    if (map[my1 * mapX + mx] < 1 && map[my2 * mapX + mx] < 1) {
+    // Check Y movement
+    if (!checkCollision(px, next_py + radius) && !checkCollision(px, next_py - radius)) {
         py = next_py;
     }
+
+    px += pdy * strafespeed * dt;
+    py -= pdx * strafespeed * dt;
 }
 
 int main(void) {
@@ -1018,6 +1101,7 @@ int main(void) {
 
         buttons();
         playerMovement();
+        updateInteractibles();
 
         BeginTextureMode(renderTex);
         ClearBackground(DARKGRAY);
