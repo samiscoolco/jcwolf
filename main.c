@@ -27,14 +27,16 @@ typedef unsigned short word;
 int doorOpenTest = 0;
 
 // this needs to be removed
-typedef struct {
+typedef struct
+{
     word RLEWtag;
     long headerOffsets[NUMMAPS];
     // tileinfo comes after this but we don't need it
 } MapHead;
 
 // so does this
-typedef struct {
+typedef struct
+{
     long planestart[3];
     word planelength[3];
     word width, height;
@@ -85,20 +87,24 @@ int *map_obj;
 
 Texture2D spTex[125];
 Color *walltextures[125];
-typedef struct {
-    int type;       // static, key, enemy
-    int state;      // on off
-    int map;        // texture to show
-    float x, y, z;  // position
+typedef struct
+{
+    short type;
+    short state;
+    short map;
+    float x, y, z;
     int dist;
 } sprite;
 
-typedef struct {
-    int type;
+typedef struct
+{
+    uint8_t type;
     uint8_t state;
     short state2;
     short state3;
     short state4;
+    short state5;
+    short state6;
     sprite *mySpriteRef;
     bool solid;
 } interactable;
@@ -107,9 +113,11 @@ interactable *interactables;
 sprite sp[255];
 sprite spStatic[255];
 
-Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
+Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr)
+{
     FILE *f = fopen(filename, "rb");
-    if (!f) {
+    if (!f)
+    {
         fprintf(stderr, "Error opening %s\n", filename);
         exit(1);
     }
@@ -138,27 +146,33 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
     uint8_t tmp[SPRITE_DIM * SPRITE_DIM] = {0};
     bool written[SPRITE_DIM * SPRITE_DIM] = {false};
 
-    for (int col = 0; col < colcount; col++) {
+    for (int col = 0; col < colcount; col++)
+    {
         int x = leftpix + col;
         int ptr = cmd_offsets[col];
 
-        while (1) {
-            if (ptr + 6 > sizes[sprNum]) break;
+        while (1)
+        {
+            if (ptr + 6 > sizes[sprNum])
+                break;
 
             int16_t endY2 = spr[ptr] | (spr[ptr + 1] << 8);
             int16_t dataOff = spr[ptr + 2] | (spr[ptr + 3] << 8);
             int16_t startY2 = spr[ptr + 4] | (spr[ptr + 5] << 8);
 
-            if (endY2 == 0) break;
+            if (endY2 == 0)
+                break;
 
             int top = startY2 / 2;
             int bottom = endY2 / 2;
             int n = top + dataOff;
 
-            for (int y = top; y < bottom; y++) {
+            for (int y = top; y < bottom; y++)
+            {
                 int index = y * SPRITE_DIM + x;
                 if (x >= 0 && x < SPRITE_DIM && y >= 0 && y < SPRITE_DIM &&
-                    n < sizes[sprNum]) {
+                    n < sizes[sprNum])
+                {
                     tmp[index] = spr[n];
                     written[index] = true;
                 }
@@ -170,14 +184,19 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
     }
 
     Color *pixels = malloc(sizeof(Color) * SPRITE_DIM * SPRITE_DIM);
-    for (int y = 0; y < SPRITE_DIM; y++) {
-        for (int x = 0; x < SPRITE_DIM; x++) {
+    for (int y = 0; y < SPRITE_DIM; y++)
+    {
+        for (int x = 0; x < SPRITE_DIM; x++)
+        {
             int index = y * SPRITE_DIM + x;
             uint8_t idx = tmp[index];
-            if (written[index]) {
-                pixels[index] = palette[idx];  // use full color including black
-            } else {
-                pixels[index] = (Color){0, 0, 0, 0};  // fully transparent
+            if (written[index])
+            {
+                pixels[index] = palette[idx]; // use full color including black
+            }
+            else
+            {
+                pixels[index] = (Color){0, 0, 0, 0}; // fully transparent
             }
         }
     }
@@ -194,13 +213,17 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
     return img;
 }
 
-void drawDoors() {
-    for (int y = 0; y < mapY; y++) {
-        for (int x = 0; x < mapX; x++) {
+void drawDoors()
+{
+    for (int y = 0; y < mapY; y++)
+    {
+        for (int x = 0; x < mapX; x++)
+        {
             int i = y * mapX + x;
             // change to pointer
             interactable tile = interactables[i];
-            if (tile.type != 90 && tile.type != 91) continue;
+            if (tile.type != 90 && tile.type != 91)
+                continue;
 
             bool vertical = (tile.type == 90);
             float doorX = x * 64 + 32;
@@ -212,8 +235,10 @@ void drawDoors() {
             float distToDoor = sqrtf(dx * dx + dy * dy);
             float angleToDoor = atan2f(dy, dx) - pa;
 
-            while (angleToDoor < -PI) angleToDoor += TPI;
-            while (angleToDoor > PI) angleToDoor -= TPI;
+            while (angleToDoor < -PI)
+                angleToDoor += TPI;
+            while (angleToDoor > PI)
+                angleToDoor -= TPI;
 
             // Approx screen X of door center
             float centerX = (angleToDoor / (DEG2RAD * FOV)) * renderWidth +
@@ -228,10 +253,13 @@ void drawDoors() {
                                      renderWidth +
                                  renderWidth / 2);
 
-            if (screenX1 < 0) screenX1 = 0;
-            if (screenX2 >= renderWidth) screenX2 = renderWidth - 1;
+            if (screenX1 < 0)
+                screenX1 = 0;
+            if (screenX2 >= renderWidth)
+                screenX2 = renderWidth - 1;
 
-            for (int sx = screenX1; sx <= screenX2; sx++) {
+            for (int sx = screenX1; sx <= screenX2; sx++)
+            {
                 float rayAngle = ((float)sx - renderWidth / 2.0f) /
                                  renderWidth * (DEG2RAD * FOV);
                 float actualAngle = pa + rayAngle;
@@ -241,22 +269,26 @@ void drawDoors() {
 
                 // Ray intersection with door plane
                 float denom = vertical ? rayDirX : rayDirY;
-                if (fabs(denom) < 0.0001f) continue;
+                if (fabs(denom) < 0.0001f)
+                    continue;
 
                 float planeOffset =
                     vertical ? (doorX - px) / rayDirX : (doorY - py) / rayDirY;
-                if (planeOffset < 0.1f) continue;
+                if (planeOffset < 0.1f)
+                    continue;
 
                 float hitX = px + rayDirX * planeOffset;
                 float hitY = py + rayDirY * planeOffset;
 
                 float tx = vertical ? (hitY - (y * 64)) : (hitX - (x * 64));
                 int texX = (int)(tx / 64.0f * 64.0f);
-                texX += tile.state2;
-                if (texX < 0) {
+                texX -= tile.state2;
+                if (texX < 0)
+                {
                     continue;
                 }
-                if (texX > 63) {
+                if (texX > 63)
+                {
                     continue;
                 }
 
@@ -266,7 +298,8 @@ void drawDoors() {
 
                 // Occlusion
                 if (sx >= 0 && sx < renderWidth &&
-                    correctedDist < wallDepth[sx]) {
+                    correctedDist < wallDepth[sx])
+                {
                     Rectangle src = {(float)texX, 0, 1, 64};
                     Rectangle dst = {(float)sx, lineY, 1, lineH};
                     DrawTexturePro(doorTexture2d, src, dst, (Vector2){0, 0},
@@ -279,8 +312,10 @@ void drawDoors() {
     }
 }
 
-void drawSprites() {
-    for (int s = 0; s < nextSprite; s++) {
+void drawSprites()
+{
+    for (int s = 0; s < nextSprite; s++)
+    {
         float sx = sp[s].x - px;
         float sy = sp[s].y - py;
         float sz = sp[s].z;
@@ -291,13 +326,15 @@ void drawSprites() {
         sx = a;
         sy = b;
 
-        if (b <= 0.1f) continue;  // sprite is behind player
+        if (b <= 0.1f)
+            continue; // sprite is behind player
 
         sx = (sx * renderWidth / sy) + (renderWidth / 2);
         sy = (sz * renderHeight / sy) + (renderHeight / 2);
 
         float scale = (renderHeight / 2.0f) / b;
-        if (scale < 0) scale = 0;
+        if (scale < 0)
+            scale = 0;
 
         scale = scale * 30;
 
@@ -307,8 +344,10 @@ void drawSprites() {
         // === SPRITE OCCLUSION CHECK ===
         // Skip drawing if behind wall in center column
         int centerColumn = (int)sx;
-        if (centerColumn >= 0 && centerColumn < renderWidth) {
-            if (b > wallDepth[centerColumn]) continue;  // sprite is behind wall
+        if (centerColumn >= 0 && centerColumn < renderWidth)
+        {
+            if (b > wallDepth[centerColumn])
+                continue; // sprite is behind wall
         }
 
         // Draw the sprite
@@ -319,17 +358,22 @@ void drawSprites() {
     }
 }
 
-void sortSprites() {
-    for (int i = 0; i < nextSprite; i++) {
+void sortSprites()
+{
+    for (int i = 0; i < nextSprite; i++)
+    {
         float dx = sp[i].x - px;
         float dy = sp[i].y - py;
-        sp[i].dist = dx * dx + dy * dy;  // squared distance is fine
+        sp[i].dist = dx * dx + dy * dy; // squared distance is fine
     }
 
     // Simple bubble sort (fine for small sprite counts)
-    for (int i = 0; i < nextSprite - 1; i++) {
-        for (int j = i + 1; j < nextSprite; j++) {
-            if (sp[i].dist < sp[j].dist) {
+    for (int i = 0; i < nextSprite - 1; i++)
+    {
+        for (int j = i + 1; j < nextSprite; j++)
+        {
+            if (sp[i].dist < sp[j].dist)
+            {
                 sprite temp = sp[i];
                 sp[i] = sp[j];
                 sp[j] = temp;
@@ -338,7 +382,8 @@ void sortSprites() {
     }
 }
 
-void CAL_CarmackExpand(unsigned short *source, unsigned short *dest, unsigned length) {
+void CAL_CarmackExpand(unsigned short *source, unsigned short *dest, unsigned length)
+{
     unsigned ch, chhigh, count, offset;
     unsigned short *copyptr, *inptr, *outptr;
 
@@ -347,68 +392,90 @@ void CAL_CarmackExpand(unsigned short *source, unsigned short *dest, unsigned le
     inptr = source;
     outptr = dest;
 
-    while (length) {
+    while (length)
+    {
         ch = *inptr++;
         chhigh = ch >> 8;
-        if (chhigh == NEARTAG) {
+        if (chhigh == NEARTAG)
+        {
             count = ch & 0xff;
-            if (!count) {  // have to insert a word containing the tag byte
+            if (!count)
+            { // have to insert a word containing the tag byte
                 unsigned char *byteptr = (unsigned char *)inptr;
                 ch |= *byteptr++;
                 inptr = (word *)byteptr;
                 *outptr++ = ch;
                 length--;
-            } else {
+            }
+            else
+            {
                 unsigned char *byteptr = (unsigned char *)inptr;
                 offset = *byteptr++;
                 inptr = (word *)byteptr;
                 copyptr = outptr - offset;
                 length -= count;
-                while (count--) *outptr++ = *copyptr++;
+                while (count--)
+                    *outptr++ = *copyptr++;
             }
-        } else if (chhigh == FARTAG) {
+        }
+        else if (chhigh == FARTAG)
+        {
             count = ch & 0xff;
-            if (!count) {  // have to insert a word containing the tag byte
+            if (!count)
+            { // have to insert a word containing the tag byte
                 unsigned char *byteptr = (unsigned char *)inptr;
                 ch |= *byteptr++;
                 inptr = (word *)byteptr;
                 *outptr++ = ch;
                 length--;
-            } else {
+            }
+            else
+            {
                 offset = *inptr++;
                 copyptr = dest + offset;
                 length -= count;
-                while (count--) *outptr++ = *copyptr++;
+                while (count--)
+                    *outptr++ = *copyptr++;
             }
-        } else {
+        }
+        else
+        {
             *outptr++ = ch;
             length--;
         }
     }
 }
 
-void CA_RLEWexpand(word *source, word *dest, long length, word rlewtag) {
+void CA_RLEWexpand(word *source, word *dest, long length, word rlewtag)
+{
     word value, count;
     word *end = dest + (length / 2);
 
-    while (dest < end) {
+    while (dest < end)
+    {
         value = *source++;
-        if (value != rlewtag) {
+        if (value != rlewtag)
+        {
             *dest++ = value;
-        } else {
+        }
+        else
+        {
             count = *source++;
             value = *source++;
-            for (int i = 0; i < count; i++) {
+            for (int i = 0; i < count; i++)
+            {
                 *dest++ = value;
             }
         }
     }
 }
 
-void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int map_number) {
+void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int map_number)
+{
     FILE *fhead = fopen(maphead_path, "rb");
     FILE *fmap = fopen(gamemaps_path, "rb");
-    if (!fhead || !fmap) {
+    if (!fhead || !fmap)
+    {
         printf("Failed to open files.\n");
         return NULL;
     }
@@ -447,18 +514,22 @@ void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int m
     // Copy to int[]
     map = malloc(PLANESIZE * sizeof(int));
     interactables = malloc(PLANESIZE * sizeof(interactable));
-    for (int i = 0; i < PLANESIZE; i++) {
-        if (rlew_output[i] <= 92) {
+    for (int i = 0; i < PLANESIZE; i++)
+    {
+        if (rlew_output[i] <= 92)
+        {
             map[i] = rlew_output[i];
-            if (rlew_output[i] == 90 || rlew_output[i] == 91) {
-                printf("asdf %d", i);
+            if (rlew_output[i] == 90 || rlew_output[i] == 91)
+            {
                 interactables[i].type = rlew_output[i];
                 interactables[i].state = 0;
                 interactables[i].state2 = 0;
                 interactables[i].state3 = 0;
                 interactables[i].solid = true;
             }
-        } else {
+        }
+        else
+        {
             map[i] = 0;
             interactables[i].type = 0;
         }
@@ -471,10 +542,12 @@ void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int m
     fclose(fmap);
 }
 
-int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int map_number, float *opx, float *opy, float *opa) {
+int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int map_number, float *opx, float *opy, float *opa)
+{
     FILE *fhead = fopen(maphead_path, "rb");
     FILE *fmap = fopen(gamemaps_path, "rb");
-    if (!fhead || !fmap) {
+    if (!fhead || !fmap)
+    {
         printf("Failed to open files.\n");
         return NULL;
     }
@@ -516,11 +589,13 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
     int startP = 0;
     int *final_map = malloc(PLANESIZE * sizeof(int));
 
-    for (int i = 0; i < PLANESIZE; i++) {
+    for (int i = 0; i < PLANESIZE; i++)
+    {
         uint8_t tile = rlew_output[i];
         final_map[i] = rlew_output[i];
 
-        if (tile >= 19 && tile <= 22) {
+        if (tile >= 19 && tile <= 22)
+        {
             face = tile;
             startP = curP;
         }
@@ -532,7 +607,8 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
 
         // guards
         if ((tile >= 180 && tile <= 183) || (tile >= 144 && tile <= 147) ||
-            (tile >= 108 && tile <= 111)) {
+            (tile >= 108 && tile <= 111))
+        {
             sp[nextSprite].type = 1;
             sp[nextSprite].state = 1;
             sp[nextSprite].map = 50;
@@ -544,7 +620,8 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
 
         // its a static
 
-        if (tile >= 23 && tile <= 73) {
+        if (tile >= 23 && tile <= 73)
+        {
             int statTile = tile - 23;
             int staticSprIndex = 2 + statTile;
             sp[nextSprite].type = 1;
@@ -576,15 +653,17 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
     return final_map;
 }
 
-void LoadPalette() {
+void LoadPalette()
+{
     printf("\nloading palette..\n");
     FILE *f = fopen(PAL_FILE, "r");
     char header[16];
     int num;
-    fgets(header, sizeof(header), f);  // JASC-PAL
-    fgets(header, sizeof(header), f);  // 0100
-    fscanf(f, "%d", &num);             // 256
-    for (int i = 0; i < num; i++) {
+    fgets(header, sizeof(header), f); // JASC-PAL
+    fgets(header, sizeof(header), f); // 0100
+    fscanf(f, "%d", &num);            // 256
+    for (int i = 0; i < num; i++)
+    {
         int r, g, b;
         fscanf(f, "%d %d %d", &r, &g, &b);
         palette[i] = (Color){r, g, b, 255};
@@ -592,14 +671,16 @@ void LoadPalette() {
     fclose(f);
 }
 
-unsigned char *ReadChunk(FILE *f, int offset) {
+unsigned char *ReadChunk(FILE *f, int offset)
+{
     fseek(f, offset, SEEK_SET);
     unsigned char *data = malloc(TEXTURE_SIZE);
     fread(data, 1, TEXTURE_SIZE, f);
     return data;
 }
 
-Image DecodeWallTexture(unsigned char *data) {
+Image DecodeWallTexture(unsigned char *data)
+{
     Image img;
     img.width = TEXTURE_WIDTH;
     img.height = TEXTURE_HEIGHT;
@@ -607,9 +688,11 @@ Image DecodeWallTexture(unsigned char *data) {
     img.mipmaps = 1;
     Color *pixels = malloc(sizeof(Color) * TEXTURE_SIZE);
 
-    for (int y = 0; y < TEXTURE_HEIGHT; y++) {
-        for (int x = 0; x < TEXTURE_WIDTH; x++) {
-            int idx = x * TEXTURE_WIDTH + y;  // rotated in
+    for (int y = 0; y < TEXTURE_HEIGHT; y++)
+    {
+        for (int x = 0; x < TEXTURE_WIDTH; x++)
+        {
+            int idx = x * TEXTURE_WIDTH + y; // rotated in
             unsigned char colorIndex = data[idx];
             pixels[y * TEXTURE_WIDTH + x] = palette[colorIndex];
         }
@@ -618,23 +701,26 @@ Image DecodeWallTexture(unsigned char *data) {
     return img;
 }
 
-float dist(float ax, float ay, float bx, float by, float ang) {
+float dist(float ax, float ay, float bx, float by, float ang)
+{
     return (sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)));
 }
 
-void LoadTextures() {
+void LoadTextures()
+{
     printf("loading textures... ");
     uint16_t totalChunks, spriteStart, soundStart;
 
     FILE *f = fopen(VSWAP_FILE, "rb");
     fread(&totalChunks, 2, 1, f);
     fread(&spriteStart, 2, 1, f);
-    fseek(f, 2, SEEK_CUR);  // skip soundStart
+    fseek(f, 2, SEEK_CUR); // skip soundStart
 
     fread(chunk_offsets, sizeof(uint32_t), totalChunks, f);
-    fseek(f, 2 * totalChunks, SEEK_CUR);  // skip chunk sizes
+    fseek(f, 2 * totalChunks, SEEK_CUR); // skip chunk sizes
 
-    for (int texnum = 0; texnum < 125; texnum++) {
+    for (int texnum = 0; texnum < 125; texnum++)
+    {
         unsigned char *data = ReadChunk(f, chunk_offsets[texnum]);
         Image img = DecodeWallTexture(data);
         walltextures[texnum] = LoadImageColors(img);
@@ -648,7 +734,8 @@ void LoadTextures() {
     UnloadImage(img);
 }
 
-void drawMap2D() {
+void drawMap2D()
+{
     int x, y;
     float newmaps = renderWidth / mapX;
     float scalefactor = newmaps / mapS;
@@ -659,19 +746,24 @@ void drawMap2D() {
     Color sqColor;
     Texture2D sqTex;
 
-    char numStr[4];  // enough for 3-digit tile numbers
+    char numStr[4]; // enough for 3-digit tile numbers
 
-    for (y = 0; y < mapY; y++) {
-        for (x = 0; x < mapX; x++) {
+    for (y = 0; y < mapY; y++)
+    {
+        for (x = 0; x < mapX; x++)
+        {
             mapitem = map[y * mapX + x];
             float tileX = x * newmaps;
             float tileY = y * newmapsy;
 
             // Draw tile background
             // DrawRectangle(tileX, tileY, newmaps, newmapsy, BLACK);
-            if (mapitem >= 1) {
+            if (mapitem >= 1)
+            {
                 DrawRectangle(tileX, tileY, newmaps, newmapsy, BLUE);
-            } else {
+            }
+            else
+            {
                 DrawRectangle(tileX, tileY, newmaps, newmapsy, LIGHTGRAY);
             }
 
@@ -688,7 +780,8 @@ void drawMap2D() {
                3.0f, MAROON);
 }
 
-void drawGame() {
+void drawGame()
+{
     int r, mx, my, mp, dof;
     float rx, ry, ra, xo, yo;
 
@@ -703,50 +796,59 @@ void drawGame() {
 
     int num_rays = renderWidth;
 
-    ra = pa - DEG2RAD * (FOV / 2);  // Start left edge of FOV
+    ra = pa - DEG2RAD * (FOV / 2); // Start left edge of FOV
 
-    if (ra < 0) {
+    if (ra < 0)
+    {
         ra += TPI;
     }
-    if (ra > TPI) {
+    if (ra > TPI)
+    {
         ra -= TPI;
     }
-    if (!mode) {
+    if (!mode)
+    {
         drawMap2D();
     }
-    for (int r = 0; r < num_rays; r++) {
+    for (int r = 0; r < num_rays; r++)
+    {
         // check hor lines
         float disH = 1000000, hx = px, hy = py;
         // depth of field
         dof = 0;
         float aTan = -1 / tan(ra);
-        if (ra > PI) {
+        if (ra > PI)
+        {
             // looking up
             ry = floor(py / 64.0) * 64.0 - 0.01;
             rx = (py - ry) * aTan + px;
             yo = -64;
             xo = -yo * aTan;
         }
-        if (ra < PI) {
+        if (ra < PI)
+        {
             // looking down
             ry = floor(py / 64.0) * 64.0 + 64;
             rx = (py - ry) * aTan + px;
             yo = 64;
             xo = -yo * aTan;
         }
-        if (ra == 0 || ra == PI) {
+        if (ra == 0 || ra == PI)
+        {
             // directly left or right
             rx = px;
             ry = py;
             dof = vdep;
         }
-        while (dof < vdep) {
+        while (dof < vdep)
+        {
             mx = (int)floor(rx / 64.0);
             my = (int)floor(ry / 64.0);
 
             mp = my * mapX + mx;
             if (mp > 0 && mp < mapX * mapY && map[mp] >= 1 &&
-                map[mp] < AREATILE) {
+                map[mp] < AREATILE)
+            {
                 // hit wall
                 hx = rx;
                 hy = ry;
@@ -754,7 +856,9 @@ void drawGame() {
                 walltexh = map[mp];
                 hitph = mp;
                 dof = vdep;
-            } else {
+            }
+            else
+            {
                 rx += xo;
                 ry += yo;
                 dof += 1;
@@ -763,41 +867,48 @@ void drawGame() {
 
         // check vert lines
         float disV = 1000000, vx = px, vy = py;
-        dof = 0;  // depth of field
+        dof = 0; // depth of field
         float nTan = -tan(ra);
-        if (ra > P2 && ra < P3) {  // looking left
+        if (ra > P2 && ra < P3)
+        { // looking left
 
             rx = floor(px / 64.0) * 64.0 - 0.01;
             ry = (px - rx) * nTan + py;
             xo = -64;
             yo = -xo * nTan;
         }
-        if (ra < P2 || ra > P3) {  // looking right
+        if (ra < P2 || ra > P3)
+        { // looking right
             rx = floor(px / 64.0) * 64.0 + 64;
             ry = (px - rx) * nTan + py;
             xo = 64;
             yo = -xo * nTan;
         }
-        if (ra == 0 || ra == PI) {  // directly straight up or down
+        if (ra == 0 || ra == PI)
+        { // directly straight up or down
             rx = px;
             ry = py;
             dof = vdep;
         }
-        while (dof < vdep) {
+        while (dof < vdep)
+        {
             mx = (int)floor(rx / 64.0);
             my = (int)floor(ry / 64.0);
 
             mp = my * mapX + mx;
 
             if (mp > 0 && mp < mapX * mapY && map[mp] >= 1 &&
-                map[mp] < AREATILE) {
+                map[mp] < AREATILE)
+            {
                 vx = rx;
                 vy = ry;
                 disV = dist(px, py, vx, vy, ra);
-                dof = vdep;  // hit wall
+                dof = vdep; // hit wall
                 walltexv = map[mp];
                 hitpv = mp;
-            } else {
+            }
+            else
+            {
                 rx += xo;
                 ry += yo;
                 dof += 1;
@@ -806,7 +917,8 @@ void drawGame() {
 
         int hitdist;
         int wallSide;
-        if (disV < disH) {
+        if (disV < disH)
+        {
             rx = vx;
             ry = vy;
             hitdist = disV;
@@ -814,7 +926,8 @@ void drawGame() {
             walltex = walltexv;
             hitp = hitpv;
         }
-        if (disH < disV) {
+        if (disH < disV)
+        {
             rx = hx;
             ry = hy;
             hitdist = disH;
@@ -823,10 +936,12 @@ void drawGame() {
             hitp = hitph;
         }
 
-        if (mode) {
+        if (mode)
+        {
             wallDepth[r] = hitdist;
-            hitdist *= cos(pa - ra);  // Remove fisheye effect
-            if (hitdist <= 0) {
+            hitdist *= cos(pa - ra); // Remove fisheye effect
+            if (hitdist <= 0)
+            {
                 hitdist = 1;
             }
 
@@ -834,7 +949,8 @@ void drawGame() {
             float ty_step = 64 / (float)lineH;
             float ty_off = 0;
 
-            if (lineH > renderHeight) {
+            if (lineH > renderHeight)
+            {
                 ty_off = (lineH - renderHeight) / 2.0;
                 lineH = renderHeight;
             }
@@ -843,17 +959,22 @@ void drawGame() {
             int pxy;
             float ty = ty_off * ty_step;
             float tx;
-            if (wallSide == 1) {
+            if (wallSide == 1)
+            {
                 tx = (int)(rx) % 64;
-            } else {
+            }
+            else
+            {
                 tx = (int)(ry) % 64;
             }
 
-            for (pxy = 0; pxy < lineH; pxy++) {
+            for (pxy = 0; pxy < lineH; pxy++)
+            {
                 if ((wallSide == 0 &&
                      (map[hitp + 1] >= 90 || map[hitp - 1] >= 90)) ||
                     (wallSide == 1 &&
-                     (map[hitp + 64] >= 90 || map[hitp - 64] >= 90))) {
+                     (map[hitp + 64] >= 90 || map[hitp - 64] >= 90)))
+                {
                     walltex = 51;
                 }
 
@@ -861,7 +982,8 @@ void drawGame() {
                 //  shading
                 Color c =
                     walltextures[(walltex - 1) * 2][((int)(ty) * 64) + (int)tx];
-                if (wallSide == 1) {
+                if (wallSide == 1)
+                {
                     c.r = c.r * 0.5;
                     c.g = c.g * 0.5;
                     c.b = c.b * 0.5;
@@ -876,31 +998,37 @@ void drawGame() {
         }
 
         ra += DEG2RAD * (FOV / num_rays);
-        if (ra < 0) {
+        if (ra < 0)
+        {
             ra += TPI;
         }
-        if (ra > TPI) {
+        if (ra > TPI)
+        {
             ra -= TPI;
         }
     }
 }
 
-void LoadSprites() {
+void LoadSprites()
+{
     printf("\nloading sprites...\n");
-    for (int sprnum = 0; sprnum < 100; sprnum++) {
+    for (int sprnum = 0; sprnum < 100; sprnum++)
+    {
         Image img = stxloadVSWAP_Sprite("VSWAP.WL6", sprnum);
         spTex[sprnum] = LoadTextureFromImage(img);
         UnloadImage(img);
     }
 }
 
-void LoadMapPlanes(uint8_t levelnum) {
+void LoadMapPlanes(uint8_t levelnum)
+{
     printf("\nloading map data for level %d\n", levelnum + 1);
     load_map_plane0("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum);
     map_obj = load_map_plane1("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum, &px, &py, &pa);
 }
 
-void init() {
+void init()
+{
     SetTraceLogLevel(LOG_NONE);
     // SetTraceLogLevel(LOG_ALL);
 
@@ -913,8 +1041,8 @@ void init() {
     speed = 0;
     vdep = 300;
     shootFrame = 0;
-    maxspeed = 300;    // max running speed
-    turnspeed = 2.5f;  // turning
+    maxspeed = 300;   // max running speed
+    turnspeed = 2.5f; // turning
 
     LoadPalette();
     LoadTextures();
@@ -923,15 +1051,20 @@ void init() {
     printf("\nstarting game...\n");
 }
 
-void buttons() {
+void buttons()
+{
     // Handle turning
-    if (IsKeyDown(KEY_A)) {
+    if (IsKeyDown(KEY_A))
+    {
         pa -= turnspeed * dt;
-        if (pa < 0) pa += TPI;
+        if (pa < 0)
+            pa += TPI;
     }
-    if (IsKeyDown(KEY_D)) {
+    if (IsKeyDown(KEY_D))
+    {
         pa += turnspeed * dt;
-        if (pa > TPI) pa -= TPI;
+        if (pa > TPI)
+            pa -= TPI;
     }
 
     // Direction vector
@@ -943,41 +1076,51 @@ void buttons() {
     speed = 0;
 
     // Forward/Backward
-    if (IsKeyDown(KEY_W)) {
+    if (IsKeyDown(KEY_W))
+    {
         speed = maxspeed;
-    } else if (IsKeyDown(KEY_S)) {
+    }
+    else if (IsKeyDown(KEY_S))
+    {
         speed = -maxspeed;
     }
 
     // Strafing with comma (left) and period (right)
-    if (IsKeyDown(KEY_PERIOD)) {
+    if (IsKeyDown(KEY_PERIOD))
+    {
         strafespeed = -maxspeed;
     }
-    if (IsKeyDown(KEY_COMMA)) {
+    if (IsKeyDown(KEY_COMMA))
+    {
         strafespeed = maxspeed;
     }
 
     // Sprinting
-    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) {
+    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
+    {
         speed *= 3.0f;
         strafespeed *= 2.5f;
     }
 
     // Toggle map view
-    if (IsKeyPressed(KEY_TAB)) {
+    if (IsKeyPressed(KEY_TAB))
+    {
         mode = !mode;
     }
 
-    if (IsKeyPressed(KEY_H)) {
+    if (IsKeyPressed(KEY_H))
+    {
         doorOpenTest += 2;
     }
 
-    if (IsKeyPressed(KEY_J)) {
+    if (IsKeyPressed(KEY_J))
+    {
         doorOpenTest -= 2;
     }
 
     // Resolution down
-    if (IsKeyPressed(KEY_M)) {
+    if (IsKeyPressed(KEY_M))
+    {
         renderHeight -= 50;
         renderWidth -= 80;
         renderTex = LoadRenderTexture(renderWidth, renderHeight);
@@ -985,7 +1128,8 @@ void buttons() {
     }
 
     // Resolution up
-    if (IsKeyPressed(KEY_N)) {
+    if (IsKeyPressed(KEY_N))
+    {
         renderHeight += 50;
         renderWidth += 80;
         renderTex = LoadRenderTexture(renderWidth, renderHeight);
@@ -993,73 +1137,100 @@ void buttons() {
     }
 }
 
-void checkInteract(float x, float y) {
+void checkInteract(float x, float y)
+{
     int tileX = ((int)px + pdx * 64) / 64;
     int tileY = ((int)py + pdy * 64) / 64;
 
     int mapxy = tileY * mapX + tileX;
     // int tile = map[mapxy];
 
-    if (IsKeyDown(KEY_SPACE)) {
+    if (IsKeyDown(KEY_SPACE))
+    {
         // printf("\n%d\n", tile);
         // map[mapxy] = 1;
 
-        if (interactables[mapxy].state != 1) {
+        if (interactables[mapxy].state != 1)
+        {
             interactables[mapxy].state = 1;
         }
     }
 }
 
-bool checkCollision(float x, float y) {
+bool checkCollision(float x, float y)
+{
     int tileX = (int)x / 64;
     int tileY = (int)y / 64;
 
     int mapxy = tileY * mapX + tileX;
     int tile = map[mapxy];
 
-    // === Customize this logic ===
-    if (tile >= 1 && tile < AREATILE) {
-        return true;  // wall
+    if (tile >= 1 && tile < AREATILE)
+    {
+        return true; // wall
     }
 
-    // Example: doors are tile 90-91
-    if (tile == 90 || tile == 91) {
+    if (tile == 90 || tile == 91)
+    {
         return interactables[mapxy].solid;
     }
 
-    return false;  // No collision
+    return false; // No collision
 }
 
-void updateInteractibles() {
-    for (int i = 0; i < PLANESIZE; i++) {
-        switch (interactables[i].type) {
-            // door logics
-            case 90:
-            case 91:
-                if (interactables[i].state == 1 && interactables[i].state3 == 0) {
-                    interactables[i].state2 += 1;
+void updateInteractibles()
+{
+    for (int i = 0; i < PLANESIZE; i++)
+    {
+        switch (interactables[i].type)
+        {
+        // door logics
+        case 90:
+        case 91:
+            // auto close door
+            if (interactables[i].state3 == 1 && interactables[i].state == 0 && interactables[i].state4 > 0)
+            {
+                interactables[i].state4 -= 1;
+                if (interactables[i].state4 <= 0)
+                {
+                    // close the mug
+                    interactables[i].state = 1;
+                    interactables[i].state3 = 1;
+                }
+            }
+            // opening
+            if (interactables[i].state == 1 && interactables[i].state3 == 0)
+            {
+                interactables[i].state2 += 1;
+
+                if (interactables[i].state2 >= 64)
+                {
                     interactables[i].solid = false;
-                    if (interactables[i].state2 >= 64) {
-                        interactables[i].state = 0;
-                        interactables[i].state3 = 1;
-                    }
+                    interactables[i].state = 0;
+                    interactables[i].state3 = 1;
+                    interactables[i].state4 = 600;
                 }
-                if (interactables[i].state == 1 && interactables[i].state3 == 1) {
-                    interactables[i].state2 -= 1;
-                    interactables[i].solid = true;
-                    if (interactables[i].state2 <= 0) {
-                        interactables[i].state = 0;
-                        interactables[i].state3 = 0;
-                    }
+            }
+            // closing
+            if (interactables[i].state == 1 && interactables[i].state3 == 1)
+            {
+                interactables[i].state2 -= 1;
+                interactables[i].solid = true;
+                if (interactables[i].state2 <= 0)
+                {
+                    interactables[i].state = 0;
+                    interactables[i].state3 = 0;
                 }
-            default:
-                continue;
+            }
+        default:
+            continue;
         }
     }
 }
 
-void playerMovement() {
-    float radius = 12.0f;
+void playerMovement()
+{
+    float radius = 15.0f;
     float moveX = pdx * speed * dt;
     float moveY = pdy * speed * dt;
 
@@ -1072,17 +1243,20 @@ void playerMovement() {
     checkInteract(px, py);
 
     // Check X movement
-    if (!checkCollision(next_px + radius, py) && !checkCollision(next_px - radius, py)) {
+    if (!checkCollision(next_px + radius, py) && !checkCollision(next_px - radius, py))
+    {
         px = next_px;
     }
 
     // Check Y movement
-    if (!checkCollision(px, next_py + radius) && !checkCollision(px, next_py - radius)) {
+    if (!checkCollision(px, next_py + radius) && !checkCollision(px, next_py - radius))
+    {
         py = next_py;
     }
 }
 
-int main(void) {
+int main(void)
+{
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(screenWidth, screenHeight, "JCWolf");
     init();
@@ -1091,7 +1265,8 @@ int main(void) {
     SetTargetFPS(60);
     char myString[50];
 
-    while (!WindowShouldClose()) {
+    while (!WindowShouldClose())
+    {
         dt = GetFrameTime();
 
         buttons();
@@ -1107,13 +1282,17 @@ int main(void) {
         sortSprites();
         drawSprites();
 
-        if (shootFrame > 5) {
+        if (shootFrame > 5)
+        {
             doorOpenTest += 1;
             shootFrame = 0;
-            if (doorOpenTest > 70) {
+            if (doorOpenTest > 70)
+            {
                 doorOpenTest = 0;
             }
-        } else {
+        }
+        else
+        {
             shootFrame += 100 * dt;
         }
 
@@ -1139,9 +1318,9 @@ int main(void) {
         DrawTexturePro(
             renderTex.texture,
             (Rectangle){0, 0, renderWidth,
-                        -renderHeight},  // flip Y axis for RenderTexture
+                        -renderHeight}, // flip Y axis for RenderTexture
             (Rectangle){0, 0, screenWidth,
-                        screenHeight},  // stretch to window size
+                        screenHeight}, // stretch to window size
             (Vector2){0, 0}, 0.0f, WHITE);
 
         // optionally draw HUD here if you want it full-res (e.g. overlays)
