@@ -9,7 +9,7 @@
 Big idea project goals:
 - Easy to port to other languages.
 - Provide the world with easy exampes of reversing [RLEW](https://moddingwiki.shikadi.net/wiki/Id_Software_RLEW_compression) and [Carmack Compression](https://moddingwiki.shikadi.net/wiki/Carmack_compression).
-- Contained in a single file for clarity porting ease.
+- Contained in a single file for clarity and porting ease.
 - Easy to hack or add new features to (or build new games with.)
 - Plug and Play with Wolf3d's original game data files.
 
