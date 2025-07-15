@@ -15,7 +15,6 @@
 #define NEARTAG 0xA7
 #define FARTAG 0xA8
 #define NUMMAPS 60
-#define MAPPLANES 3
 #define PLANESIZE (64 * 64)
 #define AREATILE 90
 #define SPRITE_WIDTH 64
@@ -25,6 +24,10 @@
 typedef unsigned char byte;
 typedef unsigned short word;
 int doorOpenTest = 0;
+
+Image framebuffer;
+Color *fbPixels;
+Texture2D frameTexture;
 
 // this needs to be removed
 typedef struct
@@ -50,6 +53,7 @@ unsigned int chunk_offsets[MAX_CHUNKS];
 int nextSprite = 0;
 
 Color palette[256];
+// pistol 421
 
 const float TPI = 2 * PI;
 const float P2 = PI / 2;
@@ -85,7 +89,7 @@ int mapX = 64, mapY = 64;
 int *map;
 int *map_obj;
 
-Texture2D spTex[125];
+Texture2D spTex[500];
 Color *walltextures[125];
 typedef struct
 {
@@ -100,11 +104,11 @@ typedef struct
 {
     uint8_t type;
     uint8_t state;
-    short state2;
-    short state3;
-    short state4;
-    short state5;
-    short state6;
+    float state2;
+    float state3;
+    float state4;
+    float state5;
+    float state6;
     sprite *mySpriteRef;
     bool solid;
 } interactable;
@@ -782,6 +786,21 @@ void drawMap2D()
 
 void drawGame()
 {
+    // floor and ceiling
+    Color ceilingColor = palette[29];
+    Color floorColor = palette[24];
+    for (int i = 0; i < renderWidth * renderHeight; i++)
+    {
+        if (i > (renderWidth * renderHeight) / 2)
+        {
+            fbPixels[i] = floorColor;
+        }
+        else
+        {
+            fbPixels[i] = ceilingColor;
+        }
+    }
+
     int r, mx, my, mp, dof;
     float rx, ry, ra, xo, yo;
 
@@ -980,16 +999,22 @@ void drawGame()
 
                 // Color c = walltextures[51][((int)(ty) * 64) + (int)tx];
                 //  shading
-                Color c =
-                    walltextures[(walltex - 1) * 2][((int)(ty) * 64) + (int)tx];
+
+                Color c = walltextures[(walltex - 1) * 2][((int)(ty) * 64) + (int)tx];
                 if (wallSide == 1)
                 {
                     c.r = c.r * 0.5;
                     c.g = c.g * 0.5;
                     c.b = c.b * 0.5;
                 }
+                int drawX = r;
+                int drawY = (int)(lineO + pxy); // final Y location
+                if (drawX >= 0 && drawX < renderWidth && drawY >= 0 && drawY < renderHeight)
+                {
+                    fbPixels[drawY * renderWidth + drawX] = c; // 'c' is the wall Color
+                }
 
-                DrawRectangle(r, pxy + lineO, 1, 1, c);
+                // DrawRectangle(r, pxy + lineO, 1, 1, c);
                 ty += ty_step;
             }
 
@@ -1007,12 +1032,17 @@ void drawGame()
             ra -= TPI;
         }
     }
+    if (mode)
+    {
+        UpdateTexture(frameTexture, fbPixels);
+        DrawTexture(frameTexture, 0, 0, WHITE);
+    }
 }
 
 void LoadSprites()
 {
     printf("\nloading sprites...\n");
-    for (int sprnum = 0; sprnum < 100; sprnum++)
+    for (int sprnum = 0; sprnum < 440; sprnum++)
     {
         Image img = stxloadVSWAP_Sprite("VSWAP.WL6", sprnum);
         spTex[sprnum] = LoadTextureFromImage(img);
@@ -1039,7 +1069,7 @@ void init()
     py = 0;
     pa = 0;
     speed = 0;
-    vdep = 300;
+    vdep = 100;
     shootFrame = 0;
     maxspeed = 300;   // max running speed
     turnspeed = 2.5f; // turning
@@ -1048,6 +1078,10 @@ void init()
     LoadTextures();
     LoadSprites();
     LoadMapPlanes(0);
+
+    framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
+    fbPixels = LoadImageColors(framebuffer);
+    frameTexture = LoadTextureFromImage(framebuffer);
     printf("\nstarting game...\n");
 }
 
@@ -1117,23 +1151,39 @@ void buttons()
     {
         doorOpenTest -= 2;
     }
+    // FPS60
+    if (IsKeyPressed(KEY_B))
+    {
+        SetTargetFPS(60);
+    }
 
+    // FPS999
+    if (IsKeyPressed(KEY_V))
+    {
+        SetTargetFPS(9999);
+    }
     // Resolution down
-    if (IsKeyPressed(KEY_M))
+    if (IsKeyPressed(KEY_N))
     {
         renderHeight -= 50;
         renderWidth -= 80;
         renderTex = LoadRenderTexture(renderWidth, renderHeight);
         printf("New Reso %dx%d\n", renderWidth, renderHeight);
+        framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
+        fbPixels = LoadImageColors(framebuffer);
+        frameTexture = LoadTextureFromImage(framebuffer);
     }
 
     // Resolution up
-    if (IsKeyPressed(KEY_N))
+    if (IsKeyPressed(KEY_M))
     {
         renderHeight += 50;
         renderWidth += 80;
         renderTex = LoadRenderTexture(renderWidth, renderHeight);
         printf("\nNew Reso %dx%d\n", renderWidth, renderHeight);
+        framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
+        fbPixels = LoadImageColors(framebuffer);
+        frameTexture = LoadTextureFromImage(framebuffer);
     }
 }
 
@@ -1188,9 +1238,9 @@ void updateInteractibles()
         case 90:
         case 91:
             // auto close door
-            if (interactables[i].state3 == 1 && interactables[i].state == 0 && interactables[i].state4 > 0)
+            if (interactables[i].state3 == 1 && interactables[i].state == 0 && interactables[i].state4 * dt > 0)
             {
-                interactables[i].state4 -= 1;
+                interactables[i].state4 -= 60 * dt;
                 if (interactables[i].state4 <= 0)
                 {
                     // close the mug
@@ -1201,7 +1251,7 @@ void updateInteractibles()
             // opening
             if (interactables[i].state == 1 && interactables[i].state3 == 0)
             {
-                interactables[i].state2 += 1;
+                interactables[i].state2 += 60 * dt;
 
                 if (interactables[i].state2 >= 64)
                 {
@@ -1214,7 +1264,7 @@ void updateInteractibles()
             // closing
             if (interactables[i].state == 1 && interactables[i].state3 == 1)
             {
-                interactables[i].state2 -= 1;
+                interactables[i].state2 -= 60 * dt;
                 interactables[i].solid = true;
                 if (interactables[i].state2 <= 0)
                 {
@@ -1262,7 +1312,7 @@ int main(void)
     init();
     renderTex = LoadRenderTexture(renderWidth, renderHeight);
 
-    SetTargetFPS(60);
+    SetTargetFPS(999);
     char myString[50];
 
     while (!WindowShouldClose())
@@ -1275,7 +1325,7 @@ int main(void)
 
         BeginTextureMode(renderTex);
         ClearBackground(DARKGRAY);
-        DrawRectangle(0, renderHeight / 2, renderWidth, renderHeight / 2, GRAY);
+        // DrawRectangle(0, renderHeight / 2, renderWidth, renderHeight / 2, GRAY);
         drawGame();
         drawDoors();
 
@@ -1296,20 +1346,27 @@ int main(void)
             shootFrame += 100 * dt;
         }
 
-        // if (mode)
-        //{
+        if (mode)
+        {
 
-        // DrawTextureRec(testSpriteTex, (Rectangle){0, 0, 64, 64},
-        // (Vector2){32, 32}, WHITE); DrawTexturePro(gun_tex,
-        // (Rectangle){(int)shootFrame * 64, 0, 64, 64}, (Rectangle){130, 300,
-        // 256, 256}, (Vector2){0, 0}, 0, WHITE);
-        //  DrawTextureEx(gun_tex, (Vector2){drawX, drawY}, 0.0f, scale, WHITE);
-        //}
+            float gunScale = renderHeight / 2.0f; // or tweak to taste
+            float gunWidth = gunScale * 2.0f;
+            float gunHeight = gunScale * 2.0f;
+            float gunX = (renderWidth / 2.0f) - (gunWidth / 2.0f);
+            float gunY = renderHeight - gunHeight;
+
+            DrawTexturePro(
+                spTex[421],
+                (Rectangle){0, 0, 64, 64}, // full sprite
+                (Rectangle){gunX, gunY, gunWidth, gunHeight},
+                (Vector2){0, 0}, 0, WHITE);
+            (spTex[421], (Rectangle){0, 0, 64, 64}, (Rectangle){32, -55, 256, 256}, (Vector2){0, 0}, 0, WHITE);
+        }
 
         EndTextureMode();
 
         BeginDrawing();
-        ClearBackground(BLACK);
+        // ClearBackground(BLACK);
 
         screenWidth = GetScreenWidth();
         screenHeight = GetScreenHeight();
