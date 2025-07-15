@@ -23,7 +23,6 @@
 
 typedef unsigned char byte;
 typedef unsigned short word;
-int doorOpenTest = 0;
 
 Image framebuffer;
 Color *fbPixels;
@@ -51,6 +50,7 @@ const char *PAL_FILE = "wolf.pal";
 
 unsigned int chunk_offsets[MAX_CHUNKS];
 int nextSprite = 0;
+uint8_t selectedGun = 0;
 
 Color palette[256];
 // pistol 421
@@ -1142,15 +1142,35 @@ void buttons()
         mode = !mode;
     }
 
-    if (IsKeyPressed(KEY_H))
+    // SHOT
+    if (IsKeyDown(KEY_LEFT_CONTROL))
     {
-        doorOpenTest += 2;
+        if (!shooting)
+        {
+            shooting = true;
+        }
     }
 
-    if (IsKeyPressed(KEY_J))
+    if (!shooting)
     {
-        doorOpenTest -= 2;
+        if (IsKeyPressed(KEY_ONE))
+        {
+            selectedGun = 0;
+        }
+        if (IsKeyPressed(KEY_TWO))
+        {
+            selectedGun = 1;
+        }
+        if (IsKeyPressed(KEY_THREE))
+        {
+            selectedGun = 2;
+        }
+        if (IsKeyPressed(KEY_FOUR))
+        {
+            selectedGun = 3;
+        }
     }
+
     // FPS60
     if (IsKeyPressed(KEY_B))
     {
@@ -1332,18 +1352,14 @@ int main(void)
         sortSprites();
         drawSprites();
 
-        if (shootFrame > 5)
+        if (shooting)
         {
-            doorOpenTest += 1;
-            shootFrame = 0;
-            if (doorOpenTest > 70)
+            shootFrame += 15 * dt;
+            if ((int)shootFrame >= 5)
             {
-                doorOpenTest = 0;
+                shootFrame = 0;
+                shooting = false;
             }
-        }
-        else
-        {
-            shootFrame += 100 * dt;
         }
 
         if (mode)
@@ -1356,7 +1372,7 @@ int main(void)
             float gunY = renderHeight - gunHeight;
 
             DrawTexturePro(
-                spTex[421],
+                spTex[416 + (int)shootFrame + selectedGun * 5],
                 (Rectangle){0, 0, 64, 64}, // full sprite
                 (Rectangle){gunX, gunY, gunWidth, gunHeight},
                 (Vector2){0, 0}, 0, WHITE);
