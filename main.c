@@ -11,7 +11,6 @@
 #define TEXTURE_SIZE (TEXTURE_WIDTH * TEXTURE_HEIGHT)
 #define SCREEN_SCALE 8
 #define MAX_CHUNKS 2048
-#define FOV 60.0f
 #define NEARTAG 0xA7
 #define FARTAG 0xA8
 #define NUMMAPS 60
@@ -23,6 +22,8 @@
 
 typedef unsigned char byte;
 typedef unsigned short word;
+
+float FOV = 80.0f;
 
 Image framebuffer;
 Color *fbPixels;
@@ -50,7 +51,7 @@ const char *PAL_FILE = "wolf.pal";
 
 unsigned int chunk_offsets[MAX_CHUNKS];
 int nextSprite = 0;
-uint8_t selectedGun = 0;
+uint8_t selectedGun = 1;
 
 Color palette[256];
 // pistol 421
@@ -59,8 +60,8 @@ const float TPI = 2 * PI;
 const float P2 = PI / 2;
 const float P3 = 3 * PI / 2;
 
-int screenWidth = 320;
-int screenHeight = 200;
+int screenWidth = 640;
+int screenHeight = 480;
 
 // native
 int renderWidth = 320;
@@ -318,13 +319,18 @@ void drawDoors()
 
 void drawSprites()
 {
+    // Calculate view plane distance based on FOV
+    float halfFOVrad = DEG2RAD * (FOV / 2.0f);
+    float projectionPlaneDist = (renderWidth / 2.0f) / tanf(halfFOVrad);
+
     for (int s = 0; s < nextSprite; s++)
     {
         float sx = sp[s].x - px;
         float sy = sp[s].y - py;
         float sz = sp[s].z;
 
-        float CS = cos(-pa), SN = sin(-pa);
+        // Rotate around player
+        float CS = cosf(-pa), SN = sinf(-pa);
         float a = sy * CS + sx * SN;
         float b = sx * CS - sy * SN;
         sx = a;
@@ -333,34 +339,36 @@ void drawSprites()
         if (b <= 0.1f)
             continue; // sprite is behind player
 
-        sx = (sx * renderWidth / sy) + (renderWidth / 2);
-        sy = (sz * renderHeight / sy) + (renderHeight / 2);
+        // Perspective projection with FOV correction
+        float screenX = (sx * projectionPlaneDist / b) + (renderWidth / 2.0f);
+        float screenY = (sz * renderHeight / b) + (renderHeight / 2.0f);
 
+        // Scaling sprite based on distance
         float scale = (renderHeight / 2.0f) / b;
-        if (scale < 0)
-            scale = 0;
+        scale = scale * 30.0f; // your original scaling factor
 
-        scale = scale * 30;
-
-        float sprLeft = sx - (scale * 2.5f);
-        float sprRight = sx + (scale * 2.5f);
+        float drawX = screenX - (scale * 2.5f);
+        float drawY = screenY - (scale * 4.0f);
+        float drawW = scale * 5.0f;
+        float drawH = scale * 5.0f;
 
         // === SPRITE OCCLUSION CHECK ===
-        // Skip drawing if behind wall in center column
-        int centerColumn = (int)sx;
+        int centerColumn = (int)screenX;
         if (centerColumn >= 0 && centerColumn < renderWidth)
         {
             if (b > wallDepth[centerColumn])
                 continue; // sprite is behind wall
         }
 
-        // Draw the sprite
-        DrawTexturePro(spTex[sp[s].map], (Rectangle){0, 0, 64, 64},
-                       (Rectangle){sx - (scale * 2.5), sy - (scale * 4),
-                                   scale * 5, scale * 5},
-                       (Vector2){0, 0}, 0.0f, WHITE);
+        DrawTexturePro(
+            spTex[sp[s].map],
+            (Rectangle){0, 0, 64, 64},
+            (Rectangle){drawX, drawY, drawW, drawH},
+            (Vector2){0, 0}, 0.0f, WHITE
+        );
     }
 }
+
 
 void sortSprites()
 {
@@ -648,8 +656,8 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
     int startX = startP % 64;
     int startY = startP / 64;
 
-    *opx = (float)startX * 64;
-    *opy = (float)startY * 64;
+    *opx = (float)startX * 64 + 32;
+    *opy = (float)startY * 64 + 32;
     *opa = (float)(face - 19) * (PI / 2);
 
     // adjust for this engines quirks
@@ -1001,7 +1009,7 @@ void drawGame()
                 //  shading
 
                 Color c = walltextures[(walltex - 1) * 2][((int)(ty) * 64) + (int)tx];
-                if (wallSide == 1)
+                if (wallSide == 0)
                 {
                     c.r = c.r * 0.5;
                     c.g = c.g * 0.5;
@@ -1071,8 +1079,8 @@ void init()
     speed = 0;
     vdep = 100;
     shootFrame = 0;
-    maxspeed = 300;   // max running speed
-    turnspeed = 2.5f; // turning
+    maxspeed = 325;   // max running speed
+    turnspeed = 2.0f; // turning
 
     LoadPalette();
     LoadTextures();
@@ -1171,16 +1179,16 @@ void buttons()
         }
     }
 
-    // FPS60
     if (IsKeyPressed(KEY_B))
     {
-        SetTargetFPS(60);
+        FOV += 0.5f;
+        printf("%f fov\n", FOV);
     }
 
-    // FPS999
     if (IsKeyPressed(KEY_V))
     {
-        SetTargetFPS(9999);
+        FOV -= 0.5f;
+        printf("%f fov\n", FOV);
     }
     // Resolution down
     if (IsKeyPressed(KEY_N))
