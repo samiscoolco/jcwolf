@@ -23,7 +23,7 @@
 typedef unsigned char byte;
 typedef unsigned short word;
 
-float FOV = 80.0f;
+float FOV = 72.0f;
 
 Image framebuffer;
 Color *fbPixels;
@@ -52,7 +52,7 @@ const char *PAL_FILE = "wolf.pal";
 unsigned int chunk_offsets[MAX_CHUNKS];
 int nextSprite = 0;
 uint8_t selectedGun = 1;
-
+short clevel;
 Color palette[256];
 // pistol 421
 
@@ -228,7 +228,9 @@ void drawDoors()
             // change to pointer
             interactable tile = interactables[i];
             if (tile.type != 90 && tile.type != 91)
+            {
                 continue;
+            }
 
             bool vertical = (tile.type == 90);
             float doorX = x * 64 + 32;
@@ -316,7 +318,6 @@ void drawDoors()
         }
     }
 }
-
 void drawSprites()
 {
     // Calculate view plane distance based on FOV
@@ -331,44 +332,78 @@ void drawSprites()
 
         // Rotate around player
         float CS = cosf(-pa), SN = sinf(-pa);
+
         float a = sy * CS + sx * SN;
         float b = sx * CS - sy * SN;
         sx = a;
         sy = b;
 
+        // sprite is behind player
         if (b <= 0.1f)
-            continue; // sprite is behind player
+        {
+            continue;
+        }
 
-        // Perspective projection with FOV correction
+        // Perspective projection
         float screenX = (sx * projectionPlaneDist / b) + (renderWidth / 2.0f);
         float screenY = (sz * renderHeight / b) + (renderHeight / 2.0f);
 
         // Scaling sprite based on distance
         float scale = (renderHeight / 2.0f) / b;
-        scale = scale * 30.0f; // your original scaling factor
+        scale = scale * 30.0f;
 
         float drawX = screenX - (scale * 2.5f);
         float drawY = screenY - (scale * 4.0f);
         float drawW = scale * 5.0f;
         float drawH = scale * 5.0f;
 
-        // === SPRITE OCCLUSION CHECK ===
         int centerColumn = (int)screenX;
         if (centerColumn >= 0 && centerColumn < renderWidth)
         {
+            // sprite is behind wall
             if (b > wallDepth[centerColumn])
-                continue; // sprite is behind wall
+            {
+                continue;
+            }
+        }
+        int angleIndex = 0;
+        if (sp[s].type == 1)
+        {
+
+            float dx = px - sp[s].x;
+            float dy = py - sp[s].y;
+            float angleToPlayer = atan2f(dy, dx); // world-space angle
+            float spriteFacing = 0.0f;
+            float relativeAngle = angleToPlayer - spriteFacing;
+
+            while (relativeAngle < 0.0f)
+            {
+                relativeAngle += TPI;
+            }
+            while (relativeAngle >= TPI)
+            {
+                relativeAngle -= TPI;
+            }
+
+            relativeAngle = TPI - relativeAngle;
+            if (relativeAngle >= TPI)
+            {
+                relativeAngle -= TPI;
+            }
+
+            // Convert to 8-angle index
+            angleIndex = (int)(relativeAngle / (TPI / 8.0f)); // 0–7
         }
 
+        // printf("%d angleIndex\n\n", angleIndex);
+
         DrawTexturePro(
-            spTex[sp[s].map],
+            spTex[sp[s].map + angleIndex],
             (Rectangle){0, 0, 64, 64},
             (Rectangle){drawX, drawY, drawW, drawH},
-            (Vector2){0, 0}, 0.0f, WHITE
-        );
+            (Vector2){0, 0}, 0.0f, WHITE);
     }
 }
-
 
 void sortSprites()
 {
@@ -619,11 +654,24 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
 
         // guards
         if ((tile >= 180 && tile <= 183) || (tile >= 144 && tile <= 147) ||
-            (tile >= 108 && tile <= 111))
+            (tile >= 108 && tile <= 111) || (tile >= 112 && tile <= 115) || (tile >= 148 && tile <= 151) || (tile >= 184 && tile <= 187))
         {
             sp[nextSprite].type = 1;
             sp[nextSprite].state = 1;
             sp[nextSprite].map = 50;
+            sp[nextSprite].x = (curP % 64) * 64 + 32;
+            sp[nextSprite].y = (curP / 64) * 64 + 32;
+            sp[nextSprite].z = 20;
+            nextSprite++;
+        }
+
+        // officer
+        if ((tile >= 188 && tile <= 191) || (tile >= 152 && tile <= 155) ||
+            (tile >= 116 && tile <= 119) || (tile >= 192 && tile <= 195) || (tile >= 156 && tile <= 159) || (tile >= 120 && tile <= 123))
+        {
+            sp[nextSprite].type = 1;
+            sp[nextSprite].state = 1;
+            sp[nextSprite].map = 138;
             sp[nextSprite].x = (curP % 64) * 64 + 32;
             sp[nextSprite].y = (curP / 64) * 64 + 32;
             sp[nextSprite].z = 20;
@@ -636,7 +684,7 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
         {
             int statTile = tile - 23;
             int staticSprIndex = 2 + statTile;
-            sp[nextSprite].type = 1;
+            sp[nextSprite].type = 0;
             sp[nextSprite].state = 1;
             sp[nextSprite].map = staticSprIndex;
             sp[nextSprite].x = (curP % 64) * 64 + 32;
@@ -659,6 +707,7 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
     *opx = (float)startX * 64 + 32;
     *opy = (float)startY * 64 + 32;
     *opa = (float)(face - 19) * (PI / 2);
+    printf("pa %f", *opa);
 
     // adjust for this engines quirks
     *opa = *opa - (PI / 2);
@@ -749,16 +798,14 @@ void LoadTextures()
 void drawMap2D()
 {
     int x, y;
-    float newmaps = renderWidth / mapX;
+    float newmaps = screenWidth / mapX;
     float scalefactor = newmaps / mapS;
 
-    float newmapsy = renderHeight / mapY;
+    float newmapsy = screenHeight / mapY;
     float scalefactory = newmapsy / mapS;
     int mapitem;
     Color sqColor;
     Texture2D sqTex;
-
-    char numStr[4]; // enough for 3-digit tile numbers
 
     for (y = 0; y < mapY; y++)
     {
@@ -768,8 +815,6 @@ void drawMap2D()
             float tileX = x * newmaps;
             float tileY = y * newmapsy;
 
-            // Draw tile background
-            // DrawRectangle(tileX, tileY, newmaps, newmapsy, BLACK);
             if (mapitem >= 1)
             {
                 DrawRectangle(tileX, tileY, newmaps, newmapsy, BLUE);
@@ -778,10 +823,6 @@ void drawMap2D()
             {
                 DrawRectangle(tileX, tileY, newmaps, newmapsy, LIGHTGRAY);
             }
-
-            // Draw tile number
-            // snprintf(numStr, sizeof(numStr), "%d", mapitem);
-            // DrawText(numStr, tileX + 3, tileY + 3, 10, RAYWHITE);
         }
     }
 
@@ -833,10 +874,7 @@ void drawGame()
     {
         ra -= TPI;
     }
-    if (!mode)
-    {
-        drawMap2D();
-    }
+
     for (int r = 0; r < num_rays; r++)
     {
         // check hor lines
@@ -1085,7 +1123,7 @@ void init()
     LoadPalette();
     LoadTextures();
     LoadSprites();
-    LoadMapPlanes(0);
+    LoadMapPlanes(clevel);
 
     framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
     fbPixels = LoadImageColors(framebuffer);
@@ -1179,17 +1217,6 @@ void buttons()
         }
     }
 
-    if (IsKeyPressed(KEY_B))
-    {
-        FOV += 0.5f;
-        printf("%f fov\n", FOV);
-    }
-
-    if (IsKeyPressed(KEY_V))
-    {
-        FOV -= 0.5f;
-        printf("%f fov\n", FOV);
-    }
     // Resolution down
     if (IsKeyPressed(KEY_N))
     {
@@ -1308,39 +1335,55 @@ void updateInteractibles()
 
 void playerMovement()
 {
-    float radius = 15.0f;
-    float moveX = pdx * speed * dt;
-    float moveY = pdy * speed * dt;
+    float radius = 19.0f;
 
-    float next_px = px + moveX;
-    float next_py = py + moveY;
+    // Total movement input
+    float moveX = pdx * speed * dt + pdy * strafespeed * dt;
+    float moveY = pdy * speed * dt - pdx * strafespeed * dt;
 
-    next_px += (pdy * strafespeed * dt);
-    next_py -= (pdx * strafespeed * dt);
+    float try_px = px + moveX;
+    float try_py = py + moveY;
+
+    // Try X axis movement separately
+    if (!checkCollision(try_px + radius, py) &&
+        !checkCollision(try_px - radius, py) &&
+        !checkCollision(try_px, py + radius) &&
+        !checkCollision(try_px, py - radius))
+    {
+        px = try_px;
+    }
+
+    // Try Y axis movement separately
+    if (!checkCollision(px + radius, try_py) &&
+        !checkCollision(px - radius, try_py) &&
+        !checkCollision(px, try_py + radius) &&
+        !checkCollision(px, try_py - radius))
+    {
+        py = try_py;
+    }
 
     checkInteract(px, py);
-
-    // Check X movement
-    if (!checkCollision(next_px + radius, py) && !checkCollision(next_px - radius, py))
-    {
-        px = next_px;
-    }
-
-    // Check Y movement
-    if (!checkCollision(px, next_py + radius) && !checkCollision(px, next_py - radius))
-    {
-        py = next_py;
-    }
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
+
+    // level select
+    if (argc > 1)
+    {
+        clevel = atoi(argv[1]);
+    }
+    else
+    {
+        clevel = 0;
+    }
+
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(screenWidth, screenHeight, "JCWolf");
     init();
     renderTex = LoadRenderTexture(renderWidth, renderHeight);
 
-    SetTargetFPS(999);
+    SetTargetFPS(60);
     char myString[50];
 
     while (!WindowShouldClose())
@@ -1354,11 +1397,15 @@ int main(void)
         BeginTextureMode(renderTex);
         ClearBackground(DARKGRAY);
         // DrawRectangle(0, renderHeight / 2, renderWidth, renderHeight / 2, GRAY);
-        drawGame();
-        drawDoors();
 
-        sortSprites();
-        drawSprites();
+        if (mode)
+        {
+            drawGame();
+
+            drawDoors();
+            sortSprites();
+            drawSprites();
+        }
 
         if (shooting)
         {
@@ -1395,16 +1442,22 @@ int main(void)
         screenWidth = GetScreenWidth();
         screenHeight = GetScreenHeight();
 
-        // scale to full screen
-        DrawTexturePro(
-            renderTex.texture,
-            (Rectangle){0, 0, renderWidth,
-                        -renderHeight}, // flip Y axis for RenderTexture
-            (Rectangle){0, 0, screenWidth,
-                        screenHeight}, // stretch to window size
-            (Vector2){0, 0}, 0.0f, WHITE);
+        if (!mode)
+        {
+            drawMap2D();
+        }
+        else
+        {
+            // scale to full screen
+            DrawTexturePro(
+                renderTex.texture,
+                (Rectangle){0, 0, renderWidth,
+                            -renderHeight}, // flip Y axis for RenderTexture
+                (Rectangle){0, 0, screenWidth,
+                            screenHeight}, // stretch to window size
+                (Vector2){0, 0}, 0.0f, WHITE);
+        }
 
-        // optionally draw HUD here if you want it full-res (e.g. overlays)
         snprintf(myString, 50, "JCWOLF x%f y%f fps: %d", px, py, GetFPS());
         DrawText(myString, 10, 10, 22, BLACK);
         EndDrawing();
