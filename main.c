@@ -34,15 +34,12 @@ Texture2D frameTexture;
 
 char gameLog[100];
 
-// this needs to be removed
 typedef struct
 {
     word RLEWtag;
     long headerOffsets[NUMMAPS];
-    // tileinfo comes after this but we don't need it
 } MapHead;
 
-// so does this
 typedef struct
 {
     long planestart[3];
@@ -107,6 +104,8 @@ typedef struct
     float x, y;
     int mappos;
     int dist;
+    float angle;
+    float speed;
 } sprite;
 
 typedef struct
@@ -123,8 +122,7 @@ typedef struct
 } interactable;
 
 interactable *interactables;
-sprite sp[255];
-sprite spStatic[255];
+sprite sp[500];
 
 Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr)
 {
@@ -407,7 +405,11 @@ void drawSprites()
             float dx = px - sp[s].x;
             float dy = py - sp[s].y;
             float angleToPlayer = atan2f(dy, dx); // world-space angle
-            float spriteFacing = 0.0f;
+            float spriteFacing = sp[s].angle;
+            if (sp[s].state == 10)
+            {
+                spriteFacing = angleToPlayer;
+            }
             float relativeAngle = angleToPlayer - spriteFacing;
 
             while (relativeAngle < 0.0f)
@@ -706,19 +708,35 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
             sp[nextSprite].map = 50;
             sp[nextSprite].x = (curP % 64) * 64 + 32;
             sp[nextSprite].y = (curP / 64) * 64 + 32;
+            sp[nextSprite].angle = TPI / 2;
             nextSprite++;
         }
 
-        // officer
+        // SS
+        if ((tile >= 198 && tile <= 201) || (tile >= 162 && tile <= 165) ||
+            (tile >= 126 && tile <= 129) || (tile >= 202 && tile <= 205) || (tile >= 166 && tile <= 169) || (tile >= 130 && tile <= 133))
+        {
+            sp[nextSprite].type = 1;
+            sp[nextSprite].state = 10;
+            sp[nextSprite].map = 138;
+            sp[nextSprite].x = (curP % 64) * 64 + 32;
+            sp[nextSprite].y = (curP / 64) * 64 + 32;
+            sp[nextSprite].mappos = i;
+            sp[nextSprite].angle = 0;
+            nextSprite++;
+        }
+
+        // OFFICER
         if ((tile >= 188 && tile <= 191) || (tile >= 152 && tile <= 155) ||
             (tile >= 116 && tile <= 119) || (tile >= 192 && tile <= 195) || (tile >= 156 && tile <= 159) || (tile >= 120 && tile <= 123))
         {
             sp[nextSprite].type = 1;
             sp[nextSprite].state = 1;
-            sp[nextSprite].map = 138;
+            sp[nextSprite].map = 238;
             sp[nextSprite].x = (curP % 64) * 64 + 32;
             sp[nextSprite].y = (curP / 64) * 64 + 32;
             sp[nextSprite].mappos = i;
+            sp[nextSprite].angle = 0;
             nextSprite++;
         }
 
@@ -1186,13 +1204,17 @@ void buttons()
     {
         pa -= turnspeed * dt;
         if (pa < 0)
+        {
             pa += TPI;
+        }
     }
     if (IsKeyDown(KEY_D))
     {
         pa += turnspeed * dt;
         if (pa > TPI)
+        {
             pa -= TPI;
+        }
     }
 
     // Direction vector
@@ -1296,11 +1318,11 @@ void checkInteract(float x, float y)
     int tileY = ((int)py + pdy * 64) / 64;
 
     int mapxy = tileY * mapX + tileX;
-    int tile = map[mapxy];
+    int tile = map_obj[mapxy];
 
     if (IsKeyDown(KEY_SPACE))
     {
-        // printf("\n%d\n", tile);
+        //printf("\n%d\n", tile);
 
         if (interactables[mapxy].state != 1)
         {
