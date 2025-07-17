@@ -315,12 +315,17 @@ void drawDoors()
                 // Ray intersection with door plane
                 float denom = vertical ? rayDirX : rayDirY;
                 if (fabs(denom) < 0.0001f)
+                {
                     continue;
+                }
 
                 float planeOffset =
                     vertical ? (doorX - px) / rayDirX : (doorY - py) / rayDirY;
+
                 if (planeOffset < 0.1f)
+                {
                     continue;
+                }
 
                 float hitX = px + rayDirX * planeOffset;
                 float hitY = py + rayDirY * planeOffset;
@@ -409,6 +414,11 @@ void drawSprites()
             {
                 continue;
             }
+        }
+        else
+        {
+            // these boys aint even on the screen son
+            continue;
         }
         int angleIndex = 0;
         if (sp[s].type == 1)
@@ -612,6 +622,7 @@ void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int m
     {
         if (rlew_output[i] <= 100)
         {
+            // all doors
             map[i] = rlew_output[i];
             if (rlew_output[i] == 90 || rlew_output[i] == 91 || rlew_output[i] == 100 || rlew_output[i] == 92)
             {
@@ -1500,16 +1511,19 @@ void updateInteractibles()
         case 91:
         case 100:
             // auto close door
-            if (interactables[i].type == 92 && !hasKey1)
+            if (interactables[i].type == 92 && !hasKey1 && interactables[i].state == 1)
             {
+                snprintf(gameLog, 50, "That son of a gun is locked.");
+                interactables[i].state = 0;
                 break;
             }
+            // close the mug
             if (interactables[i].state3 == 1 && interactables[i].state == 0 && interactables[i].state4 * dt > 0)
             {
                 interactables[i].state4 -= 60 * dt;
                 if (interactables[i].state4 <= 0)
                 {
-                    // close the mug
+
                     interactables[i].state = 1;
                     interactables[i].state3 = 1;
                 }
