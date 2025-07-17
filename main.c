@@ -61,6 +61,13 @@ const float TPI = 2 * PI;
 const float P2 = PI / 2;
 const float P3 = 3 * PI / 2;
 
+bool hasKey1;
+bool hasKey2;
+bool hasKey3;
+uint8_t ammo;
+uint8_t health;
+int score;
+
 int screenWidth = 640;
 int screenHeight = 480;
 
@@ -233,7 +240,7 @@ void drawDoors()
             int i = y * mapX + x;
             // change to pointer
             interactable tile = interactables[i];
-            if (tile.type != 90 && tile.type != 91 && tile.type != 100)
+            if (tile.type != 90 && tile.type != 91 && tile.type != 100 && tile.type != 92)
             {
                 continue;
             }
@@ -244,12 +251,16 @@ void drawDoors()
             {
                 dtex = &doorTexture2d;
             }
+            else if (tile.type == 92)
+            {
+                dtex = &keydoorTexture2d;
+            }
             else
             {
                 dtex = &elevatorTexture2d;
             }
 
-            bool vertical = (tile.type == 90 || tile.type == 100);
+            bool vertical = (tile.type == 90 || tile.type == 100 || tile.type == 92);
             float doorX = x * 64 + 32;
             float doorY = y * 64 + 32;
 
@@ -602,7 +613,7 @@ void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int m
         if (rlew_output[i] <= 100)
         {
             map[i] = rlew_output[i];
-            if (rlew_output[i] == 90 || rlew_output[i] == 91 || rlew_output[i] == 100)
+            if (rlew_output[i] == 90 || rlew_output[i] == 91 || rlew_output[i] == 100 || rlew_output[i] == 92)
             {
                 interactables[i].type = rlew_output[i];
                 interactables[i].state = 0;
@@ -695,10 +706,6 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
         }
 
         // not sure the best way to do this it will get nasty
-        // 180 - 183	Standing Guard	Hard
-        // 144 - 147	Standing Guard	Medium
-        // 108 - 111
-
         // guards
         if ((tile >= 180 && tile <= 183) || (tile >= 144 && tile <= 147) ||
             (tile >= 108 && tile <= 111) || (tile >= 112 && tile <= 115) || (tile >= 148 && tile <= 151) || (tile >= 184 && tile <= 187))
@@ -858,6 +865,11 @@ void LoadTextures()
     data = ReadChunk(f, chunk_offsets[24]);
     img = DecodeWallTexture(data);
     elevatorTexture2d = LoadTextureFromImage(img);
+    UnloadImage(img);
+
+    data = ReadChunk(f, chunk_offsets[104]);
+    img = DecodeWallTexture(data);
+    keydoorTexture2d = LoadTextureFromImage(img);
     UnloadImage(img);
 }
 
@@ -1185,6 +1197,12 @@ void init()
     shootFrame = 0;
     maxspeed = 325;   // max running speed
     turnspeed = 2.0f; // turning
+    hasKey1 = false;
+    hasKey2 = false;
+    hasKey3 = false;
+    ammo = 0;
+    health = 100;
+    score = 0;
 
     LoadPalette();
     LoadTextures();
@@ -1318,11 +1336,11 @@ void checkInteract(float x, float y)
     int tileY = ((int)py + pdy * 64) / 64;
 
     int mapxy = tileY * mapX + tileX;
-    int tile = map_obj[mapxy];
+    int tile = map[mapxy];
 
     if (IsKeyDown(KEY_SPACE))
     {
-        //printf("\n%d\n", tile);
+        printf("\n%d\n", tile);
 
         if (interactables[mapxy].state != 1)
         {
@@ -1338,9 +1356,8 @@ void removeStaticSprite(int mapxy)
         if (sp[i].mappos == mapxy)
         {
 
-            snprintf(gameLog, 50, "Collected %d.", sp[i].map);
-
             sp[i].state = 2;
+            map_obj[mapxy] = 0;
         }
     }
 }
@@ -1349,24 +1366,63 @@ void removeStaticSprite(int mapxy)
 bool checkStaticInteraction(int stile, int mapxy)
 {
     stile = stile - 23;
+    bool removeme = false;
     switch (stile)
     {
-    case 6:  // Bad food (bo_alpo)
+    case 6: // Bad food (bo_alpo)
+        break;
     case 20: // Key 1 (bo_key1)
+        hasKey1 = true;
+        removeme = true;
+        snprintf(gameLog, 50, "Found the key!");
+        break;
     case 21: // Key 2 (bo_key2)
+        hasKey2 = true;
+        removeme = true;
+        snprintf(gameLog, 50, "Found the key 2!");
+        break;
     case 24: // Good food (bo_food)
+        break;
     case 25: // First aid (bo_firstaid)
+        break;
     case 26: // Clip (bo_clip)
+        if (ammo < 99)
+        {
+            ammo += 10;
+            removeme = true;
+            snprintf(gameLog, 50, "Found ammo!  %d.", ammo);
+        }
+
+        break;
     case 27: // Machine gun (bo_machinegun)
     case 28: // Gatling gun (bo_chaingun)
     case 29: // Cross (bo_cross)
+        score += 1;
+        removeme = true;
+        snprintf(gameLog, 50, "Found Cross!  %d.", score);
+        break;
     case 30: // Chalice (bo_chalice)
+        score += 2;
+        removeme = true;
+        snprintf(gameLog, 50, "Found Chalice!  %d.", score);
+        break;
     case 31: // Bible (bo_bible)
+        score += 3;
+        removeme = true;
+        snprintf(gameLog, 50, "Found Bible!  %d.", score);
+        break;
     case 32: // Crown (bo_crown)
+        score += 4;
+        removeme = true;
+        snprintf(gameLog, 50, "Found Crown!  %d.", score);
+        break;
     case 33: // One up (bo_fullheal)
     case 34: // Gibs (bo_gibs)
     case 38: // Gibs 2 (bo_gibs)
     case 52: // Extra clip (bo_clip2)
+    }
+    if (removeme)
+    {
         removeStaticSprite(mapxy);
     }
 
@@ -1416,7 +1472,7 @@ bool checkCollision(float x, float y)
         return true; // wall
     }
 
-    if (tile == 90 || tile == 91 || tile == 100)
+    if (tile == 90 || tile == 91 || tile == 100 || tile == 92)
     {
         return interactables[mapxy].solid;
     }
@@ -1438,11 +1494,16 @@ void updateInteractibles()
                 interactables[i].state = 0;
                 map[interactables[i].mappos] = 0;
             }
-        // door logics
+
+        case 92:
         case 90:
         case 91:
         case 100:
             // auto close door
+            if (interactables[i].type == 92 && !hasKey1)
+            {
+                break;
+            }
             if (interactables[i].state3 == 1 && interactables[i].state == 0 && interactables[i].state4 * dt > 0)
             {
                 interactables[i].state4 -= 60 * dt;
