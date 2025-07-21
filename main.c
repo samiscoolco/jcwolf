@@ -29,11 +29,13 @@ enum
     STANDING_ANIM_START = 0,
     WALKING_ANIM_START = 8,
     DYING_ANIM_START = 40,
+    DYING_ANIM_LEN = 4,
     SHOOTING_ANIM_START = 46,
     STANDING_ANIM_LEN = 0,
     WALKING_ANIM_LEN = 4,
-    DYING_ANIM_LEN = 4,
-    SHOOTING_ANIM_LEN = 3
+
+    SHOOTING_ANIM_LEN = 3,
+    STATIC_ANIM_DEAD = 45
 };
 
 // enemy states
@@ -41,6 +43,7 @@ enum
 {
     STATE_COLLECTED,
     STATE_DEAD,
+    STATE_DYING,
     STATE_SHOOT,
     STATE_STAND,
     STATE_PATROL,
@@ -145,7 +148,15 @@ typedef struct
     short anim_start;
     short anim_len;
     short anim_currframe;
-
+    bool targeted;
+    bool anim_done;
+    short anim_walk_start;
+    short anim_walk_end;
+    short anim_stand;
+    short anim_pain;
+    short anim_death_start;
+    short anim_death_end;
+    short anim_shoot;
 } sprite;
 
 typedef struct
@@ -403,6 +414,7 @@ void drawSprites()
 
     for (int s = 0; s < nextSprite; s++)
     {
+        sp[s].targeted = false;
         // collected
         if (sp[s].state == STATE_COLLECTED)
         {
@@ -439,11 +451,10 @@ void drawSprites()
         float drawW = scale * 5.0f;
         float drawH = scale * 5.0f;
 
-        int centerColumn = (int)screenX;
-        if (centerColumn >= 0 && centerColumn < renderWidth)
+        if (screenX >= 0 && screenX < renderWidth)
         {
             // sprite is behind wall
-            if (b > wallDepth[centerColumn])
+            if (b > wallDepth[(int)screenX])
             {
                 continue;
             }
@@ -486,12 +497,32 @@ void drawSprites()
         }
 
         // printf("%d angleIndex\n\n", angleIndex);
+        // if you made it this far the sprite is visible to the player.. now is it shootable?
+        int centerRay = renderWidth / 2;
+        float hitDepth = wallDepth[centerRay];
 
-        DrawTexturePro(
-            spTex[sp[s].map + angleIndex],
-            (Rectangle){0, 0, 64, 64},
-            (Rectangle){drawX, drawY, drawW, drawH},
-            (Vector2){0, 0}, 0.0f, WHITE);
+        float screenCenter = renderWidth / 2.0f;
+        float centerThreshold = renderWidth * 0.1f; // 5% of screen width
+
+        bool nearCenter = fabs(screenX - screenCenter) < centerThreshold;
+
+        if (nearCenter)
+        {
+            sp[s].targeted = true;
+            DrawTexturePro(
+                spTex[sp[s].map + angleIndex],
+                (Rectangle){0, 0, 64, 64},
+                (Rectangle){drawX, drawY, drawW, drawH},
+                (Vector2){0, 0}, 0.0f, RED);
+        }
+        else
+        {
+            DrawTexturePro(
+                spTex[sp[s].map + angleIndex],
+                (Rectangle){0, 0, 64, 64},
+                (Rectangle){drawX, drawY, drawW, drawH},
+                (Vector2){0, 0}, 0.0f, WHITE);
+        }
     }
 }
 
@@ -1545,19 +1576,79 @@ void updateSprites()
         if (sp[i].type == 1)
         {
 
-            sp[i].anim_currframe += 1;
-            if (sp[i].anim_currframe >= sp[i].anim_len)
+            // getting shot is probably top level state
+            if (sp[i].state != STATE_DEAD && shooting && sp[i].targeted)
             {
+                sp[i].state = STATE_DYING;
                 sp[i].anim_currframe = 0;
+                sp[i].anim_start = DYING_ANIM_START;
+                sp[i].anim_len = DYING_ANIM_LEN;
+                sp[i].anim_done = false;
             }
-            // handle animations
-            if (sp[i].state > STATE_SHOOT)
+            if (sp[i].state == STATE_DYING)
             {
-                sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe * 8;
+
+                // anim is over
+                if (sp[i].anim_done)
+                {
+                    sp[i].state = STATE_DEAD;
+                    // laid to rest
+                    sp[i].map = sp[i].map_start + STATIC_ANIM_DEAD;
+                    sp[i].type = 0;
+                }
             }
-            else
+            // behavior
+            else if (sp[i].state == STATE_PATROL)
             {
-                sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe;
+                // dear god
+                // Inside: if (sp[i].state == STATE_PATROL)
+                float sprMoveSpeed = 50.0f * dt;
+
+                float moveX = cosf(sp[i].angle) * sprMoveSpeed;
+                float moveY = sinf(sp[i].angle) * sprMoveSpeed;
+
+                // Predict next position
+                float nextX = sp[i].x + moveX;
+                float nextY = sp[i].y + moveY;
+
+                // Basic wall collision check
+                int tileX = (int)(nextX / 64.0f);
+                int tileY = (int)(nextY / 64.0f);
+                int tile = map[tileY * mapX + tileX];
+
+                if (tile >= 1 && tile < AREATILE)
+                {
+                    // Hit a wall
+                    float newAngle = ((rand() % 360) * DEG2RAD);
+                    sp[i].angle = newAngle;
+                }
+                else
+                {
+                    // No wall
+                    sp[i].x = nextX;
+                    sp[i].y = nextY;
+                }
+            }
+
+            // animatiom
+            if (ANIM_TIMER == 0)
+            {
+                sp[i].anim_done = false;
+                sp[i].anim_currframe += 1;
+                if (sp[i].anim_currframe >= sp[i].anim_len)
+                {
+                    sp[i].anim_currframe = 0;
+                    sp[i].anim_done = true;
+                }
+                // handle animations
+                if (sp[i].state > STATE_SHOOT)
+                {
+                    sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe * 8;
+                }
+                else
+                {
+                    sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe;
+                }
             }
         }
         else
@@ -1683,7 +1774,7 @@ int main(int argc, char *argv[])
     init();
     renderTex = LoadRenderTexture(renderWidth, renderHeight);
 
-    SetTargetFPS(60);
+    SetTargetFPS(9999);
     char myString[50];
 
     while (!WindowShouldClose())
@@ -1693,12 +1784,11 @@ int main(int argc, char *argv[])
         buttons();
         playerMovement();
         updateInteractibles();
-        // updateSprites();
+        updateSprites();
         ANIM_TIMER += 10 * dt;
         if (ANIM_TIMER >= 3)
         {
             ANIM_TIMER = 0;
-            updateSprites();
         }
 
         BeginTextureMode(renderTex);
