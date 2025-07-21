@@ -23,8 +23,34 @@
 
 #define GUN_TEXTURES_START 421
 
+// enemy frame offsets
+enum
+{
+    STANDING_ANIM_START = 0,
+    WALKING_ANIM_START = 8,
+    DYING_ANIM_START = 40,
+    SHOOTING_ANIM_START = 46,
+    STANDING_ANIM_LEN = 0,
+    WALKING_ANIM_LEN = 4,
+    DYING_ANIM_LEN = 4,
+    SHOOTING_ANIM_LEN = 3
+};
+
+// enemy states
+enum
+{
+    STATE_COLLECTED,
+    STATE_DEAD,
+    STATE_SHOOT,
+    STATE_STAND,
+    STATE_PATROL,
+    STATE_CHASE
+
+};
+
 typedef unsigned char byte;
 typedef unsigned short word;
+float ANIM_TIMER;
 
 float FOV = 72.0f;
 
@@ -107,12 +133,19 @@ typedef struct
 {
     short type;
     short state;
+    short state2;
+    short state3;
     short map;
     float x, y;
     int mappos;
     int dist;
     float angle;
     float speed;
+    short map_start;
+    short anim_start;
+    short anim_len;
+    short anim_currframe;
+
 } sprite;
 
 typedef struct
@@ -371,7 +404,7 @@ void drawSprites()
     for (int s = 0; s < nextSprite; s++)
     {
         // collected
-        if (sp[s].state == 2)
+        if (sp[s].state == STATE_COLLECTED)
         {
             continue;
         }
@@ -421,7 +454,7 @@ void drawSprites()
             continue;
         }
         int angleIndex = 0;
-        if (sp[s].type == 1)
+        if (sp[s].type == 1 && sp[s].state > STATE_SHOOT)
         {
             float dx = px - sp[s].x;
             float dy = py - sp[s].y;
@@ -722,11 +755,16 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
             (tile >= 108 && tile <= 111) || (tile >= 112 && tile <= 115) || (tile >= 148 && tile <= 151) || (tile >= 184 && tile <= 187))
         {
             sp[nextSprite].type = 1;
-            sp[nextSprite].state = 1;
+
             sp[nextSprite].map = 50;
             sp[nextSprite].x = (curP % 64) * 64 + 32;
             sp[nextSprite].y = (curP / 64) * 64 + 32;
             sp[nextSprite].angle = TPI / 2;
+            sp[nextSprite].anim_start = WALKING_ANIM_START;
+            sp[nextSprite].anim_len = WALKING_ANIM_LEN;
+            sp[nextSprite].state = STATE_PATROL;
+            sp[nextSprite].map_start = sp[nextSprite].map;
+
             nextSprite++;
         }
 
@@ -735,12 +773,16 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
             (tile >= 126 && tile <= 129) || (tile >= 202 && tile <= 205) || (tile >= 166 && tile <= 169) || (tile >= 130 && tile <= 133))
         {
             sp[nextSprite].type = 1;
-            sp[nextSprite].state = 10;
+
             sp[nextSprite].map = 138;
             sp[nextSprite].x = (curP % 64) * 64 + 32;
             sp[nextSprite].y = (curP / 64) * 64 + 32;
             sp[nextSprite].mappos = i;
             sp[nextSprite].angle = 0;
+            sp[nextSprite].anim_start = SHOOTING_ANIM_START;
+            sp[nextSprite].anim_len = SHOOTING_ANIM_LEN;
+            sp[nextSprite].state = STATE_SHOOT;
+            sp[nextSprite].map_start = sp[nextSprite].map;
             nextSprite++;
         }
 
@@ -749,12 +791,16 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
             (tile >= 116 && tile <= 119) || (tile >= 192 && tile <= 195) || (tile >= 156 && tile <= 159) || (tile >= 120 && tile <= 123))
         {
             sp[nextSprite].type = 1;
-            sp[nextSprite].state = 1;
+
             sp[nextSprite].map = 238;
             sp[nextSprite].x = (curP % 64) * 64 + 32;
             sp[nextSprite].y = (curP / 64) * 64 + 32;
             sp[nextSprite].mappos = i;
             sp[nextSprite].angle = 0;
+            sp[nextSprite].anim_start = WALKING_ANIM_START;
+            sp[nextSprite].anim_len = WALKING_ANIM_LEN;
+            sp[nextSprite].state = STATE_CHASE;
+            sp[nextSprite].map_start = sp[nextSprite].map;
             nextSprite++;
         }
 
@@ -1214,6 +1260,7 @@ void init()
     ammo = 0;
     health = 100;
     score = 0;
+    ANIM_TIMER = 0.0f;
 
     LoadPalette();
     LoadTextures();
@@ -1367,7 +1414,7 @@ void removeStaticSprite(int mapxy)
         if (sp[i].mappos == mapxy)
         {
 
-            sp[i].state = 2;
+            sp[i].state = STATE_COLLECTED;
             map_obj[mapxy] = 0;
         }
     }
@@ -1489,6 +1536,35 @@ bool checkCollision(float x, float y)
     }
 
     return checkStaticInteraction(stattile, mapxy);
+}
+
+void updateSprites()
+{
+    for (int i = 0; i < nextSprite; i++)
+    {
+        if (sp[i].type == 1)
+        {
+
+            sp[i].anim_currframe += 1;
+            if (sp[i].anim_currframe >= sp[i].anim_len)
+            {
+                sp[i].anim_currframe = 0;
+            }
+            // handle animations
+            if (sp[i].state > STATE_SHOOT)
+            {
+                sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe * 8;
+            }
+            else
+            {
+                sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe;
+            }
+        }
+        else
+        {
+            continue;
+        }
+    }
 }
 
 void updateInteractibles()
@@ -1617,6 +1693,13 @@ int main(int argc, char *argv[])
         buttons();
         playerMovement();
         updateInteractibles();
+        // updateSprites();
+        ANIM_TIMER += 10 * dt;
+        if (ANIM_TIMER >= 3)
+        {
+            ANIM_TIMER = 0;
+            updateSprites();
+        }
 
         BeginTextureMode(renderTex);
         ClearBackground(DARKGRAY);
