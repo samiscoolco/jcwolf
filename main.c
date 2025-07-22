@@ -1,3 +1,7 @@
+// figure out which doors/key are 93/94 and then enum doors instead of hard coding
+// known bug with collecting ammo inside a door frame??
+
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,30 +24,17 @@
 #define SPRITE_HEIGHT 64
 #define SPRITE_DIM 64
 #define GROUND_Z 20
+#define MELEE_DIST 4800
 
 #define GUN_TEXTURES_START 421
 
-// enemy frame offsets
-enum
-{
-    STANDING_ANIM_START = 0,
-    WALKING_ANIM_START = 8,
-    DYING_ANIM_START = 40,
-    DYING_ANIM_LEN = 4,
-    SHOOTING_ANIM_START = 46,
-    STANDING_ANIM_LEN = 0,
-    WALKING_ANIM_LEN = 4,
-
-    SHOOTING_ANIM_LEN = 3,
-    STATIC_ANIM_DEAD = 45
-};
-
-// enemy states
+// states
 enum
 {
     STATE_COLLECTED,
     STATE_DEAD,
     STATE_DYING,
+    STATE_HURT,
     STATE_SHOOT,
     STATE_STAND,
     STATE_PATROL,
@@ -93,6 +84,10 @@ const float P3 = 3 * PI / 2;
 bool hasKey1;
 bool hasKey2;
 bool hasKey3;
+
+bool hasPistol = true;
+bool hasMP40 = false;
+bool hasChaingun = false;
 uint8_t ammo;
 uint8_t health;
 int score;
@@ -103,9 +98,6 @@ int screenHeight = 480;
 // native
 int renderWidth = 320;
 int renderHeight = 200;
-
-// foolish
-float wallDepth[2000];
 
 RenderTexture2D renderTex;
 
@@ -137,7 +129,7 @@ typedef struct
     short type;
     short state;
     short state2;
-    short state3;
+    short health;
     short map;
     float x, y;
     int mappos;
@@ -151,12 +143,16 @@ typedef struct
     bool targeted;
     bool anim_done;
     short anim_walk_start;
-    short anim_walk_end;
+    short anim_walk_len;
     short anim_stand;
     short anim_pain;
     short anim_death_start;
-    short anim_death_end;
-    short anim_shoot;
+    short anim_death_len;
+    short anim_dead;
+    short anim_shoot_start;
+    short anim_shoot_len;
+    bool anim_dontloop;
+
 } sprite;
 
 typedef struct
@@ -173,7 +169,28 @@ typedef struct
 } interactable;
 
 interactable *interactables;
-sprite sp[500];
+
+// hopefully you dont need more than this, otherwise i will need intelligent management (i.e using old slots when a sprite is destoryed)
+sprite sp[3000];
+float wallDepth[3000];
+
+void addStatic(int tile, int mapxy, bool mapLoaded)
+{
+    int statTile = tile - 23;
+    int staticSprIndex = 2 + statTile;
+    sp[nextSprite].type = 0;
+    sp[nextSprite].state = 1;
+    sp[nextSprite].map = staticSprIndex;
+    sp[nextSprite].x = (mapxy % 64) * 64 + 32;
+    sp[nextSprite].y = (mapxy / 64) * 64 + 32;
+    sp[nextSprite].mappos = mapxy;
+    if (mapLoaded)
+    {
+        map_obj[mapxy] = tile;
+    }
+
+    nextSprite++;
+}
 
 Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr)
 {
@@ -273,6 +290,50 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr)
                  .mipmaps = 1,
                  .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
     return img;
+}
+
+void changeEntityState(sprite *thisEnt, int state)
+{
+    thisEnt->state = state;
+    thisEnt->anim_currframe = 0;
+    thisEnt->anim_done = false;
+    thisEnt->anim_dontloop = false;
+    switch (state)
+    {
+    case STATE_HURT:
+        // weapon damaged entity logic may change later
+        thisEnt->health -= 1;
+        thisEnt->map = thisEnt->anim_pain;
+        thisEnt->anim_start = -1;
+        thisEnt->anim_len = 0;
+        thisEnt->anim_dontloop = true;
+        thisEnt->state2 = 2;
+        break;
+    case STATE_PATROL:
+    case STATE_CHASE:
+        thisEnt->anim_start = thisEnt->anim_walk_start;
+        thisEnt->anim_len = thisEnt->anim_walk_len;
+        break;
+    case STATE_DEAD:
+        thisEnt->anim_start = -1;
+        thisEnt->anim_len = 0;
+        thisEnt->map = thisEnt->anim_dead;
+        thisEnt->type = 0;
+        int tileX = (int)thisEnt->x / 64;
+        int tileY = (int)thisEnt->y / 64;
+        int mapxy = tileY * mapX + tileX;
+        // ammo pickup
+        addStatic(49, mapxy, true);
+        break;
+    case STATE_DYING:
+        thisEnt->anim_start = thisEnt->anim_death_start;
+        thisEnt->anim_len = thisEnt->anim_death_len;
+        thisEnt->anim_dontloop = true;
+        break;
+    default:
+        // stand there and look pretty
+        break;
+    }
 }
 
 void drawDoors()
@@ -496,17 +557,16 @@ void drawSprites()
             angleIndex = (int)(relativeAngle / (TPI / 8.0f)); // 0–7
         }
 
-        // printf("%d angleIndex\n\n", angleIndex);
         // if you made it this far the sprite is visible to the player.. now is it shootable?
         int centerRay = renderWidth / 2;
         float hitDepth = wallDepth[centerRay];
 
         float screenCenter = renderWidth / 2.0f;
-        float centerThreshold = renderWidth * 0.1f; // 5% of screen width
+        float centerThreshold = renderWidth * 0.08f; // shot hitbox maybe tweak based on gun
 
         bool nearCenter = fabs(screenX - screenCenter) < centerThreshold;
 
-        if (nearCenter)
+        if (nearCenter && sp[s].type == 1)
         {
             sp[s].targeted = true;
             DrawTexturePro(
@@ -788,14 +848,23 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
             sp[nextSprite].type = 1;
 
             sp[nextSprite].map = 50;
-            sp[nextSprite].x = (curP % 64) * 64 + 32;
-            sp[nextSprite].y = (curP / 64) * 64 + 32;
+            sp[nextSprite].x = (i % 64) * 64 + 32;
+            sp[nextSprite].y = (i / 64) * 64 + 32;
             sp[nextSprite].angle = TPI / 2;
-            sp[nextSprite].anim_start = WALKING_ANIM_START;
-            sp[nextSprite].anim_len = WALKING_ANIM_LEN;
-            sp[nextSprite].state = STATE_PATROL;
-            sp[nextSprite].map_start = sp[nextSprite].map;
 
+            sp[nextSprite].map_start = sp[nextSprite].map;
+            sp[nextSprite].anim_stand = 50;
+            sp[nextSprite].anim_pain = 94;
+            sp[nextSprite].anim_walk_start = 58;
+            sp[nextSprite].anim_walk_len = 4;
+            sp[nextSprite].anim_shoot_start = 96;
+            sp[nextSprite].anim_shoot_len = 3;
+            sp[nextSprite].anim_death_start = 90;
+            // death len including stray pain sprite
+            sp[nextSprite].anim_death_len = 6;
+            sp[nextSprite].anim_dead = 95;
+            sp[nextSprite].health = 3;
+            changeEntityState(&sp[nextSprite], STATE_PATROL);
             nextSprite++;
         }
 
@@ -804,16 +873,25 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
             (tile >= 126 && tile <= 129) || (tile >= 202 && tile <= 205) || (tile >= 166 && tile <= 169) || (tile >= 130 && tile <= 133))
         {
             sp[nextSprite].type = 1;
-
             sp[nextSprite].map = 138;
-            sp[nextSprite].x = (curP % 64) * 64 + 32;
-            sp[nextSprite].y = (curP / 64) * 64 + 32;
+            sp[nextSprite].x = (i % 64) * 64 + 32;
+            sp[nextSprite].y = (i / 64) * 64 + 32;
             sp[nextSprite].mappos = i;
             sp[nextSprite].angle = 0;
-            sp[nextSprite].anim_start = SHOOTING_ANIM_START;
-            sp[nextSprite].anim_len = SHOOTING_ANIM_LEN;
-            sp[nextSprite].state = STATE_SHOOT;
+
             sp[nextSprite].map_start = sp[nextSprite].map;
+            sp[nextSprite].anim_stand = 138;
+            sp[nextSprite].anim_pain = 182;
+            sp[nextSprite].anim_walk_start = 146;
+            sp[nextSprite].anim_walk_len = 4;
+            sp[nextSprite].anim_shoot_start = 184;
+            sp[nextSprite].anim_shoot_len = 3;
+            sp[nextSprite].anim_death_start = 178;
+            // death len including stray pain sprite
+            sp[nextSprite].anim_death_len = 6;
+            sp[nextSprite].anim_dead = 183;
+            sp[nextSprite].health = 6;
+            changeEntityState(&sp[nextSprite], STATE_PATROL);
             nextSprite++;
         }
 
@@ -824,14 +902,77 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
             sp[nextSprite].type = 1;
 
             sp[nextSprite].map = 238;
-            sp[nextSprite].x = (curP % 64) * 64 + 32;
-            sp[nextSprite].y = (curP / 64) * 64 + 32;
+            sp[nextSprite].x = (i % 64) * 64 + 32;
+            sp[nextSprite].y = (i / 64) * 64 + 32;
             sp[nextSprite].mappos = i;
             sp[nextSprite].angle = 0;
-            sp[nextSprite].anim_start = WALKING_ANIM_START;
-            sp[nextSprite].anim_len = WALKING_ANIM_LEN;
-            sp[nextSprite].state = STATE_CHASE;
             sp[nextSprite].map_start = sp[nextSprite].map;
+            sp[nextSprite].anim_stand = 238;
+            sp[nextSprite].anim_pain = 282;
+            sp[nextSprite].anim_walk_start = 246;
+            sp[nextSprite].anim_walk_len = 4;
+            sp[nextSprite].anim_shoot_start = 285;
+            sp[nextSprite].anim_shoot_len = 3;
+            sp[nextSprite].anim_death_start = 278;
+            // death len including stray pain sprite
+            sp[nextSprite].anim_death_len = 6;
+            sp[nextSprite].anim_dead = 284;
+            sp[nextSprite].health = 10;
+            changeEntityState(&sp[nextSprite], STATE_PATROL);
+            nextSprite++;
+        }
+
+        // ZOMBIE
+        if ((tile >= 252 && tile <= 255) || (tile >= 234 && tile <= 237) ||
+            (tile >= 216 && tile <= 219) || (tile >= 256 && tile <= 259) || (tile >= 238 && tile <= 241) || (tile >= 220 && tile <= 223))
+        {
+            sp[nextSprite].type = 1;
+
+            sp[nextSprite].map = 187;
+            sp[nextSprite].x = (i % 64) * 64 + 32;
+            sp[nextSprite].y = (i / 64) * 64 + 32;
+            sp[nextSprite].mappos = i;
+            sp[nextSprite].angle = 0;
+            sp[nextSprite].map_start = sp[nextSprite].map;
+            sp[nextSprite].anim_stand = 187;
+            sp[nextSprite].anim_pain = 231;
+            sp[nextSprite].anim_walk_start = 195;
+            sp[nextSprite].anim_walk_len = 4;
+            sp[nextSprite].anim_shoot_start = 234;
+            sp[nextSprite].anim_shoot_len = 4;
+            sp[nextSprite].anim_death_start = 227;
+            // death len including stray pain sprite
+            sp[nextSprite].anim_death_len = 7;
+            sp[nextSprite].anim_dead = 233;
+            sp[nextSprite].health = 7;
+            changeEntityState(&sp[nextSprite], STATE_PATROL);
+            nextSprite++;
+        }
+
+        // EVIL DOG
+        if ((tile >= 206 && tile <= 209) || (tile >= 170 && tile <= 173) ||
+            (tile >= 134 && tile <= 137) || (tile >= 210 && tile <= 213) || (tile >= 174 && tile <= 177) || (tile >= 138 && tile <= 141))
+        {
+            sp[nextSprite].type = 1;
+
+            sp[nextSprite].map = 99;
+            sp[nextSprite].x = (i % 64) * 64 + 32;
+            sp[nextSprite].y = (i / 64) * 64 + 32;
+            sp[nextSprite].mappos = i;
+            sp[nextSprite].angle = 0;
+            sp[nextSprite].map_start = sp[nextSprite].map;
+            sp[nextSprite].anim_stand = 99;
+            sp[nextSprite].anim_pain = 131;
+            sp[nextSprite].anim_walk_start = 99;
+            sp[nextSprite].anim_walk_len = 4;
+            sp[nextSprite].anim_shoot_start = 135;
+            sp[nextSprite].anim_shoot_len = 3;
+            sp[nextSprite].anim_death_start = 131;
+            // death len including stray pain sprite
+            sp[nextSprite].anim_death_len = 4;
+            sp[nextSprite].anim_dead = 134;
+            sp[nextSprite].health = 2;
+            changeEntityState(&sp[nextSprite], STATE_PATROL);
             nextSprite++;
         }
 
@@ -839,15 +980,7 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
 
         if (tile >= 23 && tile <= 73)
         {
-            int statTile = tile - 23;
-            int staticSprIndex = 2 + statTile;
-            sp[nextSprite].type = 0;
-            sp[nextSprite].state = 1;
-            sp[nextSprite].map = staticSprIndex;
-            sp[nextSprite].x = (curP % 64) * 64 + 32;
-            sp[nextSprite].y = (curP / 64) * 64 + 32;
-            sp[nextSprite].mappos = i;
-            nextSprite++;
+            addStatic(tile, i, false);
         }
         curP++;
     }
@@ -1288,7 +1421,12 @@ void init()
     hasKey1 = false;
     hasKey2 = false;
     hasKey3 = false;
-    ammo = 0;
+
+    hasPistol = true;
+    hasMP40 = false;
+    hasChaingun = false;
+
+    ammo = 10;
     health = 100;
     score = 0;
     ANIM_TIMER = 0.0f;
@@ -1370,7 +1508,17 @@ void buttons()
     {
         if (!shooting)
         {
-            shooting = true;
+            // knife dont need ammo
+            if (selectedGun != 0 && ammo > 0)
+            {
+                ammo--;
+                shooting = true;
+            }
+
+            else if (selectedGun == 0)
+            {
+                shooting = true;
+            }
         }
     }
 
@@ -1380,15 +1528,15 @@ void buttons()
         {
             selectedGun = 0;
         }
-        if (IsKeyPressed(KEY_TWO))
+        if (IsKeyPressed(KEY_TWO) && hasPistol)
         {
             selectedGun = 1;
         }
-        if (IsKeyPressed(KEY_THREE))
+        if (IsKeyPressed(KEY_THREE) && hasMP40)
         {
             selectedGun = 2;
         }
-        if (IsKeyPressed(KEY_FOUR))
+        if (IsKeyPressed(KEY_FOUR) && hasChaingun)
         {
             selectedGun = 3;
         }
@@ -1425,7 +1573,7 @@ void checkInteract(float x, float y)
     int tileY = ((int)py + pdy * 64) / 64;
 
     int mapxy = tileY * mapX + tileX;
-    int tile = map[mapxy];
+    int tile = map_obj[mapxy];
 
     if (IsKeyDown(KEY_SPACE))
     {
@@ -1471,8 +1619,14 @@ bool checkStaticInteraction(int stile, int mapxy)
         snprintf(gameLog, 50, "Found the key 2!");
         break;
     case 24: // Good food (bo_food)
+        health += 1;
+        removeme = true;
+        snprintf(gameLog, 50, "Found yummy food!  %d.", health);
         break;
     case 25: // First aid (bo_firstaid)
+        health += 2;
+        removeme = true;
+        snprintf(gameLog, 50, "Found med kit!  %d.", health);
         break;
     case 26: // Clip (bo_clip)
         if (ammo < 99)
@@ -1484,7 +1638,17 @@ bool checkStaticInteraction(int stile, int mapxy)
 
         break;
     case 27: // Machine gun (bo_machinegun)
+        hasMP40 = true;
+        ammo += 10;
+        snprintf(gameLog, 50, "Yeah brother thats an mp40!");
+        removeme = true;
+        break;
     case 28: // Gatling gun (bo_chaingun)
+        hasChaingun = true;
+        ammo += 10;
+        snprintf(gameLog, 50, "Yeah brother thats a chaingun!");
+        removeme = true;
+        break;
     case 29: // Cross (bo_cross)
         score += 1;
         removeme = true;
@@ -1577,24 +1741,47 @@ void updateSprites()
         {
 
             // getting shot is probably top level state
-            if (sp[i].state != STATE_DEAD && shooting && sp[i].targeted)
+            if (sp[i].state != STATE_DEAD && sp[i].state != STATE_DYING && (int)shootFrame == 3 && sp[i].targeted && sp[i].state2 <= 0)
             {
-                sp[i].state = STATE_DYING;
-                sp[i].anim_currframe = 0;
-                sp[i].anim_start = DYING_ANIM_START;
-                sp[i].anim_len = DYING_ANIM_LEN;
-                sp[i].anim_done = false;
+                // if its melee weapon check that were close
+                if (selectedGun == 0)
+                {
+
+                    if (sp[i].dist < MELEE_DIST)
+                    {
+                        changeEntityState(&sp[i], STATE_HURT);
+                    }
+                }
+                else
+                {
+                    changeEntityState(&sp[i], STATE_HURT);
+                }
+
+                // dead
+                if (sp[i].health <= 0)
+                {
+                    changeEntityState(&sp[i], STATE_DYING);
+                }
             }
+
+            else if (sp[i].state == STATE_HURT && ANIM_TIMER == 0)
+            {
+                // iframes still going but resume last state
+                sp[i].state2 -= 1;
+                if (sp[i].state2 <= 0)
+                {
+                    changeEntityState(&sp[i], STATE_PATROL);
+                }
+            }
+
             if (sp[i].state == STATE_DYING)
             {
 
                 // anim is over
                 if (sp[i].anim_done)
                 {
-                    sp[i].state = STATE_DEAD;
                     // laid to rest
-                    sp[i].map = sp[i].map_start + STATIC_ANIM_DEAD;
-                    sp[i].type = 0;
+                    changeEntityState(&sp[i], STATE_DEAD);
                 }
             }
             // behavior
@@ -1631,7 +1818,7 @@ void updateSprites()
             }
 
             // animatiom
-            if (ANIM_TIMER == 0)
+            if (ANIM_TIMER == 0 && sp[i].state != STATE_DEAD && sp[i].anim_start >= 0)
             {
                 sp[i].anim_done = false;
                 sp[i].anim_currframe += 1;
@@ -1640,14 +1827,23 @@ void updateSprites()
                     sp[i].anim_currframe = 0;
                     sp[i].anim_done = true;
                 }
+                if (sp[i].anim_done && sp[i].anim_dontloop)
+                {
+                    return;
+                }
                 // handle animations
                 if (sp[i].state > STATE_SHOOT)
                 {
-                    sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe * 8;
+                    sp[i].map = sp[i].anim_start + sp[i].anim_currframe * 8;
                 }
                 else
                 {
-                    sp[i].map = sp[i].map_start + sp[i].anim_start + sp[i].anim_currframe;
+                    // handles a quirk where pain frame shows up in the middle of dying animation?
+                    if (sp[i].state == STATE_DYING && sp[i].anim_start + sp[i].anim_currframe == sp[i].anim_pain)
+                    {
+                        sp[i].anim_currframe += 1;
+                    }
+                    sp[i].map = sp[i].anim_start + sp[i].anim_currframe;
                 }
             }
         }
@@ -1774,7 +1970,7 @@ int main(int argc, char *argv[])
     init();
     renderTex = LoadRenderTexture(renderWidth, renderHeight);
 
-    SetTargetFPS(9999);
+    SetTargetFPS(60);
     char myString[50];
 
     while (!WindowShouldClose())
@@ -1785,7 +1981,7 @@ int main(int argc, char *argv[])
         playerMovement();
         updateInteractibles();
         updateSprites();
-        ANIM_TIMER += 10 * dt;
+        ANIM_TIMER += 20 * dt;
         if (ANIM_TIMER >= 3)
         {
             ANIM_TIMER = 0;
@@ -1847,12 +2043,12 @@ int main(int argc, char *argv[])
             // scale to full screen
             DrawTexturePro(
                 renderTex.texture,
-                (Rectangle){0, 0, renderWidth,
-                            -renderHeight}, // flip Y axis for RenderTexture
-                (Rectangle){0, 0, screenWidth,
-                            screenHeight}, // stretch to window size
+                (Rectangle){0, 0, renderWidth, -renderHeight},            // flip Y axis for RenderTexture
+                (Rectangle){50, 50, screenWidth - 100, screenHeight - 100}, // stretch to window size
                 (Vector2){0, 0}, 0.0f, WHITE);
         }
+        //these 50s are preparing to make room for hud and have the resizable output window.
+
 
         snprintf(myString, 50, "JCWOLF x%f y%f fps: %d", px, py, GetFPS());
         DrawText(myString, 10, 10, 22, BLACK);
