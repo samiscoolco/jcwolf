@@ -1,3 +1,9 @@
+// current todo
+//  enemies walk through wall
+//  tweak enemy view settings and get proper ammo/health values
+//  enemies cant see through open doors because they only look at the tile
+//  SOUND
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,8 +26,12 @@
 #define SPRITE_DIM 64
 #define GROUND_Z 20
 #define MELEE_DIST 4800
+#define ENEMY_VIEWDIST 300000
+#define ENEMY_SHOOTDIST 200000
 
 #define GUN_TEXTURES_START 421
+
+#define DEBUGTARGETCOLOR RED
 
 // states
 enum
@@ -45,6 +55,10 @@ float FOV = 72.0f;
 
 uint8_t logTimer = 0;
 uint8_t maxLogTimer = 30;
+
+uint8_t fxTimer = 0;
+uint8_t maxFxTimer = 3;
+Color feedbackColor;
 
 Image framebuffer;
 Color *fbPixels;
@@ -72,7 +86,7 @@ typedef struct
 #define PALFILE "WOLF.PAL"
 
 // remove this if you have the WL6 files
-#define SHAREWARE
+#define SHAREWAREz
 
 #ifdef SHAREWARE
 #define VSWAPFILE "VSWAP.WL1"
@@ -327,6 +341,10 @@ void changeEntityState(sprite *thisEnt, int state)
     thisEnt->anim_dontloop = false;
     switch (state)
     {
+    case STATE_SHOOT:
+        thisEnt->anim_start = thisEnt->anim_shoot_start;
+        thisEnt->anim_len = thisEnt->anim_shoot_len;
+        break;
     case STATE_HURT:
         // weapon damaged entity logic may change later
         thisEnt->health -= 1;
@@ -600,7 +618,7 @@ void drawSprites()
                 spTex[sp[s].map + angleIndex],
                 (Rectangle){0, 0, 64, 64},
                 (Rectangle){drawX, drawY, drawW, drawH},
-                (Vector2){0, 0}, 0.0f, RED);
+                (Vector2){0, 0}, 0.0f, DEBUGTARGETCOLOR);
         }
         else
         {
@@ -1471,6 +1489,12 @@ void init()
     printf("\nstarting game...\n");
 }
 
+void flashScreen(Color dcolor)
+{
+    fxTimer = maxFxTimer;
+    feedbackColor = dcolor;
+}
+
 void logText(char *text)
 {
     snprintf(gameLog, 100, text);
@@ -1548,10 +1572,12 @@ void buttons()
             {
                 ammo--;
                 shooting = true;
+                // flashScreen(YELLOW);
             }
 
             else if (selectedGun == 0)
             {
+
                 shooting = true;
             }
         }
@@ -1726,6 +1752,7 @@ bool checkStaticInteraction(int stile, int mapxy)
     }
     if (removeme)
     {
+        flashScreen(WHITE);
         removeStaticSprite(mapxy);
     }
 
@@ -1782,6 +1809,70 @@ bool checkCollision(float x, float y)
 
     return checkStaticInteraction(stattile, mapxy);
 }
+bool checkLine(float x0, float y0, float x1, float y1)
+{
+    // Convert world coords to tile coords
+    int tileX0 = (int)(x0 / 64.0f);
+    int tileY0 = (int)(y0 / 64.0f);
+    int tileX1 = (int)(x1 / 64.0f);
+    int tileY1 = (int)(y1 / 64.0f);
+
+    int dx = abs(tileX1 - tileX0);
+    int dy = abs(tileY1 - tileY0);
+    int sx = (tileX0 < tileX1) ? 1 : -1;
+    int sy = (tileY0 < tileY1) ? 1 : -1;
+    int err = dx - dy;
+
+    while (tileX0 != tileX1 || tileY0 != tileY1)
+    {
+        // Check if this tile is a wall
+        int index = tileY0 * mapX + tileX0;
+        // area tile patch fix soon!
+        if (map[index] >= 1 && map[index] < 100)
+        {
+            return false; // wall blocks view
+        }
+
+        int e2 = 2 * err;
+        if (e2 > -dy)
+        {
+            err -= dy;
+            tileX0 += sx;
+        }
+        if (e2 < dx)
+        {
+            err += dx;
+            tileY0 += sy;
+        }
+    }
+
+    printf("sfx Wha ha!");
+    return true; // clear path
+}
+
+bool canSeePlayer(sprite *enemy)
+{
+    // Angle check
+    float dx = px - enemy->x;
+    float dy = py - enemy->y;
+    float angleToPlayer = atan2f(dy, dx);
+    float angleDiff = angleToPlayer - enemy->angle;
+    while (angleDiff < -PI)
+    {
+        angleDiff += TPI;
+    }
+
+    while (angleDiff > PI)
+    {
+        angleDiff -= TPI;
+    }
+
+    if (fabsf(angleDiff) > 45.0f * DEG2RAD)
+    {
+        return false;
+    }
+    return checkLine(enemy->x, enemy->y, px, py);
+}
 
 void updateSprites()
 {
@@ -1820,7 +1911,7 @@ void updateSprites()
                 sp[i].state2 -= 1;
                 if (sp[i].state2 <= 0)
                 {
-                    changeEntityState(&sp[i], STATE_PATROL);
+                    changeEntityState(&sp[i], STATE_CHASE);
                 }
             }
 
@@ -1837,34 +1928,74 @@ void updateSprites()
             // behavior
             else if (sp[i].state == STATE_PATROL)
             {
-                // dear god
-                // Inside: if (sp[i].state == STATE_PATROL)
-                float sprMoveSpeed = 50.0f * dt;
-
-                float moveX = cosf(sp[i].angle) * sprMoveSpeed;
-                float moveY = sinf(sp[i].angle) * sprMoveSpeed;
-
-                // Predict next position
-                float nextX = sp[i].x + moveX;
-                float nextY = sp[i].y + moveY;
-
-                // Basic wall collision check
-                int tileX = (int)(nextX / 64.0f);
-                int tileY = (int)(nextY / 64.0f);
-                int tile = map[tileY * mapX + tileX];
-
-                if (tile >= 1 && tile < AREATILE)
+                // Check if sprite sees player
+                if (sp[i].dist < ENEMY_VIEWDIST && canSeePlayer(&sp[i]))
                 {
-                    // Hit a wall
-                    float newAngle = ((rand() % 360) * DEG2RAD);
-                    sp[i].angle = newAngle;
+                    sp[i].state = STATE_CHASE;
                 }
                 else
                 {
-                    // No wall
-                    sp[i].x = nextX;
-                    sp[i].y = nextY;
+                    // Regular patrol movement
+                    float sprMoveSpeed = 50.0f * dt;
+                    float moveX = cosf(sp[i].angle) * sprMoveSpeed;
+                    float moveY = sinf(sp[i].angle) * sprMoveSpeed;
+                    float nextX = sp[i].x + moveX;
+                    float nextY = sp[i].y + moveY;
+                    int tileX = (int)(nextX / 64.0f);
+                    int tileY = (int)(nextY / 64.0f);
+                    int tile = map[tileY * mapX + tileX];
+
+                    // area tile patch fix soon!
+                    if (tile >= 1 && tile < 100)
+                    {
+                        float newAngle = ((rand() % 360) * DEG2RAD);
+                        sp[i].angle = newAngle;
+                    }
+                    else
+                    {
+                        sp[i].x = nextX;
+                        sp[i].y = nextY;
+                    }
                 }
+            }
+            else if (sp[i].state == STATE_CHASE)
+            {
+                // Distance to player
+                float dx = px - sp[i].x;
+                float dy = py - sp[i].y;
+
+                // If close enough and can see, shoot
+                if (sp[i].dist < ENEMY_SHOOTDIST && canSeePlayer(&sp[i]))
+                {
+                    changeEntityState(&sp[i], STATE_SHOOT);
+                    // maybe face the player
+                    sp[i].angle = atan2f(dy, dx);
+                }
+                else
+                {
+                    // Move toward player
+                    float sprMoveSpeed = 60.0f * dt;
+                    float angle = atan2f(dy, dx);
+                    float moveX = cosf(angle) * sprMoveSpeed;
+                    float moveY = sinf(angle) * sprMoveSpeed;
+                    sp[i].x += moveX;
+                    sp[i].y += moveY;
+                    sp[i].angle = angle;
+                }
+            }
+            else if (sp[i].state == STATE_SHOOT)
+            {
+                if (ANIM_TIMER == 0 && sp[i].anim_currframe == 2)
+                {
+                    // check for hit
+                    flashScreen(RED);
+                    health = health - 5;
+                }
+                if (!canSeePlayer(&sp[i]))
+                {
+                    changeEntityState(&sp[i], STATE_CHASE);
+                }
+                // printf("wallykazam");
             }
 
             // animatiom
@@ -2049,6 +2180,11 @@ int main(int argc, char *argv[])
             {
                 logTimer -= 1;
             }
+
+            if (fxTimer > 0)
+            {
+                fxTimer -= 1;
+            }
         }
 
         BeginTextureMode(renderTex);
@@ -2104,17 +2240,25 @@ int main(int argc, char *argv[])
         }
         else
         {
-            // scale to full screen
             DrawTexturePro(
                 renderTex.texture,
                 (Rectangle){0, 0, renderWidth, -renderHeight},              // flip Y axis for RenderTexture
                 (Rectangle){50, 50, screenWidth - 100, screenHeight - 100}, // stretch to window size
                 (Vector2){0, 0}, 0.0f, WHITE);
+            if (fxTimer > 0)
+            {
+                float alphaRatio = (float)fxTimer / maxFxTimer;
+                int alpha = (int)(100 * alphaRatio);
+                Color feedbackColorNow = (Color){feedbackColor.r, feedbackColor.g, feedbackColor.b, alpha};
+
+                // Flash overlay
+                DrawRectangle(50, 50, screenWidth - 100, screenHeight - 100, feedbackColorNow);
+            }
         }
         // these 50s are preparing to make room for hud and have the resizable output window.
 
-        snprintf(myString, 50, "JCWOLF x%f y%f fps: %d", px, py, GetFPS());
-        DrawText(myString, 10, 10, 22, BLACK);
+        // snprintf(myString, 50, "JCWOLF x%f y%f fps: %d", px, py, GetFPS());
+        // DrawText(myString, 10, 10, 22, BLACK);
 
         if (logTimer > 0)
         {
@@ -2123,6 +2267,9 @@ int main(int argc, char *argv[])
             Color fadeRed = (Color){255, 0, 0, alpha};
             DrawTextEx(font, gameLog, (Vector2){10, 25}, 22, 0, fadeRed);
         }
+
+        snprintf(myString, 100, "HEALTH: %d   AMMO: %d    SCORE: %d", health, ammo, score);
+        DrawText(myString, 10, screenHeight - 24, 22, WHITE);
 
         EndDrawing();
     }
