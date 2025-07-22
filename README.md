@@ -1,5 +1,5 @@
 # jcwolf
-**jcwolf** is a reimplementation of *Wolfenstein 3D* using the original `.WL6` game files.
+**jcwolf** is a reimplementation of *Wolfenstein 3D* using the original game files.
 
 ---
 
