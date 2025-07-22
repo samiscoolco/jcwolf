@@ -1,6 +1,3 @@
-// figure out which doors/key are 93/94 and then enum doors instead of hard coding
-// known bug with collecting ammo inside a door frame??
-
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,7 +9,6 @@
 #define TEXTURE_WIDTH 64
 #define TEXTURE_HEIGHT 64
 #define TEXTURE_SIZE (TEXTURE_WIDTH * TEXTURE_HEIGHT)
-#define SCREEN_SCALE 8
 #define MAX_CHUNKS 2048
 #define NEARTAG 0xA7
 #define FARTAG 0xA8
@@ -72,8 +68,24 @@ typedef struct
     char name[16];
 } MapHeader;
 
-const char *VSWAP_FILE = "VSWAP.WL6";
-const char *PAL_FILE = "wolf.pal";
+// are you using shareware or no?
+#define PALFILE "WOLF.PAL"
+
+// remove this if you have the WL6 files
+#define SHAREWARE
+
+#ifdef SHAREWARE
+#define VSWAPFILE "VSWAP.WL1"
+#define GAMEMAPSFILE "GAMEMAPS.WL1"
+#define MAPHEADFILE "MAPHEAD.WL1"
+#endif
+
+#ifndef SHAREWARE
+#define VSWAPFILE "VSWAP.WL6"
+#define GAMEMAPSFILE "GAMEMAPS.WL6"
+#define MAPHEADFILE "MAPHEAD.WL6"
+
+#endif
 
 unsigned int chunk_offsets[MAX_CHUNKS];
 int nextSprite = 0;
@@ -234,6 +246,12 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr)
     uint8_t tmp[SPRITE_DIM * SPRITE_DIM] = {0};
     bool written[SPRITE_DIM * SPRITE_DIM] = {false};
 
+    if (leftpix < 0)
+    {
+        Image img;
+        return img;
+    }
+
     for (int col = 0; col < colcount; col++)
     {
         int x = leftpix + col;
@@ -354,7 +372,7 @@ void drawDoors()
             int i = y * mapX + x;
             // change to pointer
             interactable tile = interactables[i];
-            if (tile.type != 90 && tile.type != 91 && tile.type != 100 && tile.type != 92)
+            if (tile.type != 90 && tile.type != 91 && tile.type != 100 && tile.type != 92 && tile.type != 93 && tile.type != 94 && tile.type != 95)
             {
                 continue;
             }
@@ -365,7 +383,7 @@ void drawDoors()
             {
                 dtex = &doorTexture2d;
             }
-            else if (tile.type == 92)
+            else if (tile.type >= 92 && tile.type <= 95)
             {
                 dtex = &keydoorTexture2d;
             }
@@ -374,7 +392,7 @@ void drawDoors()
                 dtex = &elevatorTexture2d;
             }
 
-            bool vertical = (tile.type == 90 || tile.type == 100 || tile.type == 92);
+            bool vertical = (tile.type == 90 || tile.type == 92 || tile.type == 100 || tile.type == 94);
             float doorX = x * 64 + 32;
             float doorY = y * 64 + 32;
 
@@ -757,7 +775,7 @@ void *load_map_plane0(const char *maphead_path, const char *gamemaps_path, int m
         {
             // all doors
             map[i] = rlew_output[i];
-            if (rlew_output[i] == 90 || rlew_output[i] == 91 || rlew_output[i] == 100 || rlew_output[i] == 92)
+            if (rlew_output[i] == 90 || rlew_output[i] == 91 || rlew_output[i] == 100 || rlew_output[i] == 92 || rlew_output[i] == 93 || rlew_output[i] == 94 || rlew_output[i] == 95)
             {
                 interactables[i].type = rlew_output[i];
                 interactables[i].state = 0;
@@ -1006,7 +1024,6 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
     *opx = (float)startX * 64 + 32;
     *opy = (float)startY * 64 + 32;
     *opa = (float)(face - 19) * (PI / 2);
-    printf("pa %f", *opa);
 
     // adjust for this engines quirks
     *opa = *opa - (PI / 2);
@@ -1016,7 +1033,7 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
 void LoadPalette()
 {
     printf("\nloading palette..\n");
-    FILE *f = fopen(PAL_FILE, "r");
+    FILE *f = fopen(PALFILE, "r");
     char header[16];
     int num;
     fgets(header, sizeof(header), f); // JASC-PAL
@@ -1071,7 +1088,7 @@ void LoadTextures()
     printf("loading textures... ");
     uint16_t totalChunks, spriteStart, soundStart;
 
-    FILE *f = fopen(VSWAP_FILE, "rb");
+    FILE *f = fopen(VSWAPFILE, "rb");
     fread(&totalChunks, 2, 1, f);
     fread(&spriteStart, 2, 1, f);
     fseek(f, 2, SEEK_CUR); // skip soundStart
@@ -1396,7 +1413,7 @@ void LoadSprites()
     printf("\nloading sprites...\n");
     for (int sprnum = 0; sprnum < 440; sprnum++)
     {
-        Image img = stxloadVSWAP_Sprite("VSWAP.WL6", sprnum);
+        Image img = stxloadVSWAP_Sprite(VSWAPFILE, sprnum);
         spTex[sprnum] = LoadTextureFromImage(img);
         UnloadImage(img);
     }
@@ -1405,8 +1422,8 @@ void LoadSprites()
 void LoadMapPlanes(uint8_t levelnum)
 {
     printf("\nloading map data for level %d\n", levelnum + 1);
-    load_map_plane0("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum);
-    map_obj = load_map_plane1("MAPHEAD.WL6", "GAMEMAPS.WL6", levelnum, &px, &py, &pa);
+    load_map_plane0(MAPHEADFILE, GAMEMAPSFILE, levelnum);
+    map_obj = load_map_plane1(MAPHEADFILE, GAMEMAPSFILE, levelnum, &px, &py, &pa);
 }
 
 void init()
@@ -1599,7 +1616,7 @@ void checkInteract(float x, float y)
     int tileY = ((int)py + pdy * 64) / 64;
 
     int mapxy = tileY * mapX + tileX;
-    int tile = map_obj[mapxy];
+    int tile = map[mapxy];
 
     if (IsKeyDown(KEY_SPACE))
     {
@@ -1758,7 +1775,7 @@ bool checkCollision(float x, float y)
         return true; // wall
     }
 
-    if (tile == 90 || tile == 91 || tile == 100 || tile == 92)
+    if (tile == 90 || tile == 91 || tile == 100 || tile == 92 || tile == 93 || tile == 94 || tile == 95)
     {
         return interactables[mapxy].solid;
     }
@@ -1897,23 +1914,33 @@ void updateInteractibles()
         case 98:
             if (interactables[i].state == 1)
             {
-                // printf("what the hecka");
+                logText("A push wall? cool beans!");
                 interactables[i].state = 0;
                 map[interactables[i].mappos] = 0;
             }
 
         case 92:
+        case 93:
+        case 94:
+        case 95:
         case 90:
         case 91:
         case 100:
-            // auto close door
-            if (interactables[i].type == 92 && !hasKey1 && interactables[i].state == 1)
+            // locked door 1
+            if ((interactables[i].type == 92 || interactables[i].type == 93) && !hasKey1 && interactables[i].state == 1)
             {
                 logText("The son of a gun is locked!");
                 interactables[i].state = 0;
                 break;
             }
-            // close the mug
+            // locked door 2
+            if ((interactables[i].type == 94 || interactables[i].type == 95) && !hasKey2 && interactables[i].state == 1)
+            {
+                logText("The son of a gun is locked!");
+                interactables[i].state = 0;
+                break;
+            }
+            // close the mug after some time
             if (interactables[i].state3 == 1 && interactables[i].state == 0 && interactables[i].state4 * dt > 0)
             {
                 interactables[i].state4 -= 60 * dt;
