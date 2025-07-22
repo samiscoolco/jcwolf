@@ -1,7 +1,6 @@
 // figure out which doors/key are 93/94 and then enum doors instead of hard coding
 // known bug with collecting ammo inside a door frame??
 
-
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -48,9 +47,14 @@ float ANIM_TIMER;
 
 float FOV = 72.0f;
 
+uint8_t logTimer = 0;
+uint8_t maxLogTimer = 30;
+
 Image framebuffer;
 Color *fbPixels;
 Texture2D frameTexture;
+
+Font font;
 
 char gameLog[100];
 
@@ -76,6 +80,11 @@ int nextSprite = 0;
 uint8_t selectedGun = 1;
 short clevel;
 Color palette[256];
+
+// floor and ceiling
+Color ceilingColor;
+Color floorColor;
+Color borderColor;
 
 const float TPI = 2 * PI;
 const float P2 = PI / 2;
@@ -1134,9 +1143,7 @@ void drawMap2D()
 
 void drawGame()
 {
-    // floor and ceiling
-    Color ceilingColor = palette[29];
-    Color floorColor = palette[24];
+
     for (int i = 0; i < renderWidth * renderHeight; i++)
     {
         if (i > (renderWidth * renderHeight) / 2)
@@ -1408,6 +1415,7 @@ void init()
     // SetTraceLogLevel(LOG_ALL);
 
     printf("\ninitializing...\n");
+    font = GetFontDefault();
     nextSprite = 0;
     mode = true;
     px = 0;
@@ -1436,10 +1444,20 @@ void init()
     LoadSprites();
     LoadMapPlanes(clevel);
 
+    ceilingColor = palette[29];
+    floorColor = palette[24];
+    borderColor = palette[127];
+
     framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
     fbPixels = LoadImageColors(framebuffer);
     frameTexture = LoadTextureFromImage(framebuffer);
     printf("\nstarting game...\n");
+}
+
+void logText(char *text)
+{
+    snprintf(gameLog, 100, text);
+    logTimer = maxLogTimer;
 }
 
 void buttons()
@@ -1542,28 +1560,36 @@ void buttons()
         }
     }
 
-    // Resolution down
+    // debug stuff
     if (IsKeyPressed(KEY_N))
     {
-        renderHeight -= 50;
-        renderWidth -= 80;
-        renderTex = LoadRenderTexture(renderWidth, renderHeight);
-        printf("New Reso %dx%d\n", renderWidth, renderHeight);
-        framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
-        fbPixels = LoadImageColors(framebuffer);
-        frameTexture = LoadTextureFromImage(framebuffer);
+        // testpal -= 1;
+        // borderColor = palette[testpal];
+        // printf("%d pal", testpal);
+
+        // renderHeight -= 50;
+        // renderWidth -= 80;
+        // renderTex = LoadRenderTexture(renderWidth, renderHeight);
+        // printf("New Reso %dx%d\n", renderWidth, renderHeight);
+        // framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
+        // fbPixels = LoadImageColors(framebuffer);
+        // frameTexture = LoadTextureFromImage(framebuffer);
     }
 
-    // Resolution up
+    // debug stuff
     if (IsKeyPressed(KEY_M))
     {
-        renderHeight += 50;
-        renderWidth += 80;
-        renderTex = LoadRenderTexture(renderWidth, renderHeight);
-        printf("\nNew Reso %dx%d\n", renderWidth, renderHeight);
-        framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
-        fbPixels = LoadImageColors(framebuffer);
-        frameTexture = LoadTextureFromImage(framebuffer);
+        // testpal += 1;
+        // borderColor = palette[testpal];
+        // printf("%d pal", testpal);
+
+        // renderHeight += 50;
+        // renderWidth += 80;
+        // renderTex = LoadRenderTexture(renderWidth, renderHeight);
+        // printf("\nNew Reso %dx%d\n", renderWidth, renderHeight);
+        // framebuffer = GenImageColor(renderWidth, renderHeight, DARKGRAY);
+        // fbPixels = LoadImageColors(framebuffer);
+        // frameTexture = LoadTextureFromImage(framebuffer);
     }
 }
 
@@ -1611,63 +1637,70 @@ bool checkStaticInteraction(int stile, int mapxy)
     case 20: // Key 1 (bo_key1)
         hasKey1 = true;
         removeme = true;
-        snprintf(gameLog, 50, "Found the key!");
+        logText("Found the key!");
         break;
     case 21: // Key 2 (bo_key2)
         hasKey2 = true;
         removeme = true;
-        snprintf(gameLog, 50, "Found the key 2!");
+        logText("Found the key 2!");
+
         break;
     case 24: // Good food (bo_food)
         health += 1;
         removeme = true;
-        snprintf(gameLog, 50, "Found yummy food!  %d.", health);
+        logText("Found yummy food!");
+
         break;
     case 25: // First aid (bo_firstaid)
         health += 2;
         removeme = true;
-        snprintf(gameLog, 50, "Found med kit!  %d.", health);
+        logText("Found med kit!");
+
         break;
     case 26: // Clip (bo_clip)
         if (ammo < 99)
         {
             ammo += 10;
             removeme = true;
-            snprintf(gameLog, 50, "Found ammo!  %d.", ammo);
+            logText("Found ammo!");
         }
 
         break;
     case 27: // Machine gun (bo_machinegun)
         hasMP40 = true;
         ammo += 10;
-        snprintf(gameLog, 50, "Yeah brother thats an mp40!");
+        logText("Yeah brother thats an mp40!");
         removeme = true;
         break;
     case 28: // Gatling gun (bo_chaingun)
         hasChaingun = true;
         ammo += 10;
-        snprintf(gameLog, 50, "Yeah brother thats a chaingun!");
+        logText("Yeah brother thats a chaingun!");
         removeme = true;
         break;
     case 29: // Cross (bo_cross)
         score += 1;
         removeme = true;
-        snprintf(gameLog, 50, "Found Cross!  %d.", score);
+        logText("Found Cross!");
+
         break;
     case 30: // Chalice (bo_chalice)
         score += 2;
         removeme = true;
-        snprintf(gameLog, 50, "Found Chalice!  %d.", score);
+        logText("Found Chalice!");
+
         break;
     case 31: // Bible (bo_bible)
         score += 3;
         removeme = true;
-        snprintf(gameLog, 50, "Found Bible!  %d.", score);
+        logText("Found Gold Chest!");
+
         break;
     case 32: // Crown (bo_crown)
         score += 4;
         removeme = true;
-        snprintf(gameLog, 50, "Found Crown!  %d.", score);
+        logText("Found Crown!");
+
         break;
     case 33: // One up (bo_fullheal)
     case 34: // Gibs (bo_gibs)
@@ -1876,7 +1909,7 @@ void updateInteractibles()
             // auto close door
             if (interactables[i].type == 92 && !hasKey1 && interactables[i].state == 1)
             {
-                snprintf(gameLog, 50, "That son of a gun is locked.");
+                logText("The son of a gun is locked!");
                 interactables[i].state = 0;
                 break;
             }
@@ -1985,6 +2018,10 @@ int main(int argc, char *argv[])
         if (ANIM_TIMER >= 3)
         {
             ANIM_TIMER = 0;
+            if (logTimer > 0)
+            {
+                logTimer -= 1;
+            }
         }
 
         BeginTextureMode(renderTex);
@@ -2029,7 +2066,7 @@ int main(int argc, char *argv[])
         EndTextureMode();
 
         BeginDrawing();
-        // ClearBackground(BLACK);
+        ClearBackground(borderColor);
 
         screenWidth = GetScreenWidth();
         screenHeight = GetScreenHeight();
@@ -2043,16 +2080,23 @@ int main(int argc, char *argv[])
             // scale to full screen
             DrawTexturePro(
                 renderTex.texture,
-                (Rectangle){0, 0, renderWidth, -renderHeight},            // flip Y axis for RenderTexture
+                (Rectangle){0, 0, renderWidth, -renderHeight},              // flip Y axis for RenderTexture
                 (Rectangle){50, 50, screenWidth - 100, screenHeight - 100}, // stretch to window size
                 (Vector2){0, 0}, 0.0f, WHITE);
         }
-        //these 50s are preparing to make room for hud and have the resizable output window.
-
+        // these 50s are preparing to make room for hud and have the resizable output window.
 
         snprintf(myString, 50, "JCWOLF x%f y%f fps: %d", px, py, GetFPS());
         DrawText(myString, 10, 10, 22, BLACK);
-        DrawText(gameLog, 10, 25, 22, RED);
+
+        if (logTimer > 0)
+        {
+            float alphaRatio = (float)logTimer / maxLogTimer;
+            int alpha = (int)(255 * alphaRatio);
+            Color fadeRed = (Color){255, 0, 0, alpha};
+            DrawTextEx(font, gameLog, (Vector2){10, 25}, 22, 0, fadeRed);
+        }
+
         EndDrawing();
     }
 
