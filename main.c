@@ -39,6 +39,7 @@ enum {
     STATE_DEAD,
     STATE_DYING,
     STATE_HURT,
+    STATE_ALERTED,
     STATE_SHOOT,
     STATE_STAND,
     STATE_PATROL,
@@ -267,15 +268,17 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
         int ptr = cmd_offsets[col];
 
         while (1) {
-            if (ptr + 6 > sizes[sprNum])
+            if (ptr + 6 > sizes[sprNum]) {
                 break;
+            }
 
             int16_t endY2 = spr[ptr] | (spr[ptr + 1] << 8);
             int16_t dataOff = spr[ptr + 2] | (spr[ptr + 3] << 8);
             int16_t startY2 = spr[ptr + 4] | (spr[ptr + 5] << 8);
 
-            if (endY2 == 0)
+            if (endY2 == 0) {
                 break;
+            }
 
             int top = startY2 / 2;
             int bottom = endY2 / 2;
@@ -326,6 +329,15 @@ void changeEntityState(sprite *thisEnt, int state) {
     thisEnt->anim_done = false;
     thisEnt->anim_dontloop = false;
     switch (state) {
+        case STATE_ALERTED:
+            // he saw us
+            thisEnt->health -= 1;
+            thisEnt->map = thisEnt->anim_stand;
+            thisEnt->anim_start = -1;
+            thisEnt->anim_len = 0;
+            thisEnt->anim_dontloop = true;
+            thisEnt->state2 = 10;
+            break;
         case STATE_SHOOT:
             thisEnt->anim_start = thisEnt->anim_shoot_start;
             thisEnt->anim_len = thisEnt->anim_shoot_len;
@@ -1709,14 +1721,16 @@ void updateSprites() {
             }
 
             else if (sp[i].state == STATE_HURT && ANIM_TIMER == 0) {
-                // iframes still going but resume last state
                 sp[i].state2 -= 1;
                 if (sp[i].state2 <= 0) {
                     changeEntityState(&sp[i], STATE_CHASE);
                 }
-            }
-
-            if (sp[i].state == STATE_DYING) {
+            } else if (sp[i].state == STATE_ALERTED && ANIM_TIMER == 0) {
+                sp[i].state2 -= 1;
+                if (sp[i].state2 <= 0) {
+                    changeEntityState(&sp[i], STATE_CHASE);
+                }
+            } else if (sp[i].state == STATE_DYING) {
                 // anim is over
                 if (sp[i].anim_done) {
                     // laid to rest
@@ -1727,7 +1741,8 @@ void updateSprites() {
             else if (sp[i].state == STATE_PATROL) {
                 // Check if sprite sees player
                 if (sp[i].dist < ENEMY_VIEWDIST && canSeePlayer(&sp[i])) {
-                    sp[i].state = STATE_CHASE;
+                    changeEntityState(&sp[i], STATE_ALERTED);
+
                 } else {
                     // Regular patrol movement
                     moveX = cosf(sp[i].angle) * sprMoveSpeed;
@@ -1769,10 +1784,6 @@ void updateSprites() {
 
             // if movement is needed!
             if (moveX != 0 || moveY != 0) {
-                if (sp[i].targeted) {
-                    printf("MUTHAFUCK");
-                }
-
                 // checkCollision
                 nextX = sp[i].x + moveX;
                 nextY = sp[i].y + moveY;
@@ -1786,6 +1797,11 @@ void updateSprites() {
                     !checkCollision(nextX, sp[i].y + radius, false) &&
                     !checkCollision(nextX, sp[i].y - radius, false)) {
                     sp[i].x = nextX;
+                } else {
+                    if (sp[i].state == STATE_PATROL) {
+                        float newAngle = ((rand() % 360) * DEG2RAD);
+                        sp[i].angle = newAngle;
+                    }
                 }
 
                 // Try Y axis movement separately
@@ -1794,6 +1810,11 @@ void updateSprites() {
                     !checkCollision(sp[i].x, nextY + radius, false) &&
                     !checkCollision(sp[i].x, nextY - radius, false)) {
                     sp[i].y = nextY;
+                } else {
+                    if (sp[i].state == STATE_PATROL) {
+                        float newAngle = ((rand() % 360) * DEG2RAD);
+                        sp[i].angle = newAngle;
+                    }
                 }
 
                 // if (sp[i].state == STATE_PATROL) {
