@@ -226,10 +226,10 @@ void addStatic(int tile, int mapxy, bool mapLoaded) {
     nextSprite++;
 }
 
-Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
-    FILE *f = fopen(filename, "rb");
+Image stxloadVSWAP_Sprite(FILE *f, int desiredSpr) {
+    fseek(f, 0, SEEK_SET);
     if (!f) {
-        fprintf(stderr, "Error opening %s\n", filename);
+        fprintf(stderr, "Error opening vswap\n");
         exit(1);
     }
 
@@ -246,8 +246,10 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
     int sprNum = spriteStart + desiredSpr;
     fseek(f, offsets[sprNum], SEEK_SET);
     uint8_t *spr = malloc(sizes[sprNum]);
+    if (sizes[sprNum] < 1) {
+        return (Image){0};
+    }
     fread(spr, 1, sizes[sprNum], f);
-    fclose(f);
 
     int16_t leftpix = *(int16_t *)&spr[0];
     int16_t rightpix = *(int16_t *)&spr[2];
@@ -256,12 +258,6 @@ Image stxloadVSWAP_Sprite(const char *filename, int desiredSpr) {
     uint16_t *cmd_offsets = (uint16_t *)(spr + 4);
     uint8_t tmp[SPRITE_DIM * SPRITE_DIM] = {0};
     bool written[SPRITE_DIM * SPRITE_DIM] = {false};
-    // printf("made it   here %d", leftpix);
-    if (leftpix < 0) {
-        // not valid!
-        return (Image){0};
-    }
-    // printf("and  here\n");
 
     for (int col = 0; col < colcount; col++) {
         int x = leftpix + col;
@@ -336,7 +332,7 @@ void changeEntityState(sprite *thisEnt, int state) {
             thisEnt->anim_start = -1;
             thisEnt->anim_len = 0;
             thisEnt->anim_dontloop = true;
-            thisEnt->state2 = 10;
+            thisEnt->state2 = 4;
             break;
         case STATE_SHOOT:
             thisEnt->anim_start = thisEnt->anim_shoot_start;
@@ -1300,11 +1296,13 @@ void drawGame() {
 
 void LoadSprites() {
     printf("\nloading sprites...\n");
+    FILE *f = fopen(VSWAPFILE, "rb");
     for (int sprnum = 0; sprnum < 440; sprnum++) {
-        Image img = stxloadVSWAP_Sprite(VSWAPFILE, sprnum);
+        Image img = stxloadVSWAP_Sprite(f, sprnum);
         spTex[sprnum] = LoadTextureFromImage(img);
         UnloadImage(img);
     }
+    fclose(f);
 }
 
 void LoadMapPlanes(uint8_t levelnum) {
