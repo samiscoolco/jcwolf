@@ -28,10 +28,27 @@
 #define MELEEDIST 4800
 #define ENEMY_VIEWDIST 300000
 #define ENEMY_SHOOTDIST 200000
-
 #define GUN_TEXTURES_START 421
-
 #define DEBUGTARGETCOLOR WHITE
+
+// are you using shareware or no?
+#define PALFILE "WOLF.PAL"
+
+// remove this if you have the WL6 files
+#define SHAREWARE
+
+#ifdef SHAREWARE
+#define VSWAPFILE "VSWAP.WL1"
+#define GAMEMAPSFILE "GAMEMAPS.WL1"
+#define MAPHEADFILE "MAPHEAD.WL1"
+#endif
+
+#ifndef SHAREWARE
+#define VSWAPFILE "VSWAP.WL6"
+#define GAMEMAPSFILE "GAMEMAPS.WL6"
+#define MAPHEADFILE "MAPHEAD.WL6"
+
+#endif
 
 // states
 enum {
@@ -82,25 +99,6 @@ typedef struct
     char name[16];
 } MapHeader;
 
-// are you using shareware or no?
-#define PALFILE "WOLF.PAL"
-
-// remove this if you have the WL6 files
-#define SHAREWARE
-
-#ifdef SHAREWARE
-#define VSWAPFILE "VSWAP.WL1"
-#define GAMEMAPSFILE "GAMEMAPS.WL1"
-#define MAPHEADFILE "MAPHEAD.WL1"
-#endif
-
-#ifndef SHAREWARE
-#define VSWAPFILE "VSWAP.WL6"
-#define GAMEMAPSFILE "GAMEMAPS.WL6"
-#define MAPHEADFILE "MAPHEAD.WL6"
-
-#endif
-
 unsigned int chunk_offsets[MAX_CHUNKS];
 int nextSprite = 0;
 uint8_t selectedGun = 1;
@@ -124,7 +122,7 @@ bool hasPistol = true;
 bool hasMP40 = false;
 bool hasChaingun = false;
 uint8_t ammo;
-uint8_t health;
+uint8_t phealth;
 int score;
 
 int screenWidth = 640;
@@ -210,7 +208,8 @@ interactable *interactables;
 sprite sp[3000];
 float wallDepth[3000];
 
-void addStatic(int tile, int mapxy, bool mapLoaded) {
+// ovride is if the visual spr needs to be seperate from the tile data
+void addStatic(int tile, int mapxy, bool mapLoaded, int ovride) {
     int statTile = tile - 23;
     int staticSprIndex = 2 + statTile;
     sp[nextSprite].type = 0;
@@ -220,7 +219,11 @@ void addStatic(int tile, int mapxy, bool mapLoaded) {
     sp[nextSprite].y = (mapxy / 64) * 64 + 32;
     sp[nextSprite].mappos = mapxy;
     if (mapLoaded) {
-        map_obj[mapxy] = tile;
+        if (ovride > -1) {
+            map_obj[mapxy] = ovride;
+        } else {
+            map_obj[mapxy] = tile;
+        }
     }
 
     nextSprite++;
@@ -332,7 +335,7 @@ void changeEntityState(sprite *thisEnt, int state) {
             thisEnt->anim_start = -1;
             thisEnt->anim_len = 0;
             thisEnt->anim_dontloop = true;
-            thisEnt->state2 = 4;
+            thisEnt->state2 = 3;
             break;
         case STATE_SHOOT:
             thisEnt->anim_start = thisEnt->anim_shoot_start;
@@ -360,8 +363,8 @@ void changeEntityState(sprite *thisEnt, int state) {
             int tileX = (int)thisEnt->x / 64;
             int tileY = (int)thisEnt->y / 64;
             int mapxy = tileY * mapX + tileX;
-            // ammo pickup
-            addStatic(49, mapxy, true);
+            // ammo pickup 49=ammo sprite, 75-23=boclip2tile
+            addStatic(49, mapxy, true, 75);
             break;
         case STATE_DYING:
             thisEnt->anim_start = thisEnt->anim_death_start;
@@ -946,7 +949,7 @@ int *load_map_plane1(const char *maphead_path, const char *gamemaps_path, int ma
         // its a static
 
         if (tile >= 23 && tile <= 73) {
-            addStatic(tile, i, false);
+            addStatic(tile, i, false, -1);
         }
         curP++;
     }
@@ -1336,7 +1339,7 @@ void init() {
     hasChaingun = false;
 
     ammo = 10;
-    health = 100;
+    phealth = 100;
     score = 0;
     ANIM_TIMER = 0.0f;
 
@@ -1501,6 +1504,45 @@ void removeStaticSprite(int mapxy) {
     }
 }
 
+void hurtSelf(short amt) {
+    phealth = phealth - amt;
+    if (phealth > 100) {
+        phealth = 0;
+    }
+    if (phealth == 0) {
+        // logs text kicking off the very primitive death screen timer that shares logTimer;
+        logText("YOURE DEAD");
+    }
+}
+
+bool healSelf(short amt) {
+    if (phealth < 100) {
+        phealth += amt;
+
+        if (phealth > 100) {
+            phealth = 100;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool giveAmmo(short amt) {
+    if (ammo < 99) {
+        ammo += amt;
+
+        if (ammo > 99) {
+            ammo = 99;
+        }
+        return true;
+    }
+    return false;
+}
+
+void givePoints(short amt) {
+    score += amt;
+}
+
 // handle interactions when bumping statics
 bool checkStaticInteraction(int stile, int mapxy, bool fromPlayer) {
     stile = stile - 23;
@@ -1508,6 +1550,10 @@ bool checkStaticInteraction(int stile, int mapxy, bool fromPlayer) {
     if (fromPlayer) {
         switch (stile) {
             case 6:  // Bad food (bo_alpo)
+                removeme = healSelf(4);
+                if (removeme) {
+                    logText("Tasty kibble..");
+                }
                 break;
             case 20:  // Key 1 (bo_key1)
                 hasKey1 = true;
@@ -1521,57 +1567,62 @@ bool checkStaticInteraction(int stile, int mapxy, bool fromPlayer) {
 
                 break;
             case 24:  // Good food (bo_food)
-                health += 1;
-                removeme = true;
-                logText("Found yummy food!");
-
+                removeme = healSelf(10);
+                if (removeme) {
+                    logText("Found yummy food!");
+                }
                 break;
             case 25:  // First aid (bo_firstaid)
-                health += 2;
-                removeme = true;
-                logText("Found med kit!");
-
+                removeme = healSelf(25);
+                if (removeme) {
+                    logText("Found med kit!");
+                }
+                break;
+            case 52:  // Extra clip (bo_clip2)
+                removeme = giveAmmo(4);
+                if (removeme) {
+                    logText("Found spare ammo!");
+                }
                 break;
             case 26:  // Clip (bo_clip)
-                if (ammo < 99) {
-                    ammo += 10;
-                    removeme = true;
+                removeme = giveAmmo(8);
+                if (removeme) {
                     logText("Found ammo!");
                 }
 
                 break;
             case 27:  // Machine gun (bo_machinegun)
                 hasMP40 = true;
-                ammo += 10;
+                giveAmmo(6);
                 logText("Yeah brother thats an mp40!");
                 removeme = true;
                 break;
             case 28:  // Gatling gun (bo_chaingun)
                 hasChaingun = true;
-                ammo += 10;
+                giveAmmo(6);
                 logText("Yeah brother thats a chaingun!");
                 removeme = true;
                 break;
             case 29:  // Cross (bo_cross)
-                score += 1;
+                givePoints(100);
                 removeme = true;
                 logText("Found Cross!");
 
                 break;
             case 30:  // Chalice (bo_chalice)
-                score += 2;
+                givePoints(500);
                 removeme = true;
                 logText("Found Chalice!");
 
                 break;
             case 31:  // Bible (bo_bible)
-                score += 3;
+                givePoints(1000);
                 removeme = true;
                 logText("Found Gold Chest!");
 
                 break;
             case 32:  // Crown (bo_crown)
-                score += 4;
+                givePoints(5000);
                 removeme = true;
                 logText("Found Crown!");
 
@@ -1579,7 +1630,6 @@ bool checkStaticInteraction(int stile, int mapxy, bool fromPlayer) {
             case 33:  // One up (bo_fullheal)
             case 34:  // Gibs (bo_gibs)
             case 38:  // Gibs 2 (bo_gibs)
-            case 52:  // Extra clip (bo_clip2)
         }
         if (removeme) {
             flashScreen(WHITE);
@@ -1654,7 +1704,14 @@ bool checkLine(float x0, float y0, float x1, float y1) {
         int index = tileY0 * mapX + tileX0;
         // area tile patch fix soon!
         if (map[index] >= 1 && map[index] < 100) {
-            return false;  // wall blocks view
+            // is the door open?
+            if (map[index] > 90) {
+                if (interactables[index].solid) {
+                    return false;  // wall blocks view
+                }
+            } else {
+                return false;  // wall blocks view
+            }
         }
 
         int e2 = 2 * err;
@@ -1772,7 +1829,7 @@ void updateSprites() {
                 if (ANIM_TIMER == 0 && sp[i].anim_currframe == 2) {
                     // check for hit
                     flashScreen(RED);
-                    health = health - 5;
+                    hurtSelf(5);
                 }
                 if (!canSeePlayer(&sp[i])) {
                     changeEntityState(&sp[i], STATE_CHASE);
@@ -1959,10 +2016,19 @@ int main(int argc, char *argv[]) {
     while (!WindowShouldClose()) {
         dt = GetFrameTime();
 
-        buttons();
-        playerMovement();
-        updateInteractibles();
-        updateSprites();
+        if (phealth > 0 && phealth < 101) {
+            buttons();
+            playerMovement();
+            updateInteractibles();
+            updateSprites();
+        } else {
+            flashScreen(RED);
+            if (logTimer == 0) {
+                // very primitive death screen timer using the logged death message.
+                // next work on a restart level function
+                exit(1);
+            }
+        }
         ANIM_TIMER += 20 * dt;
         if (ANIM_TIMER >= 3) {
             ANIM_TIMER = 0;
@@ -2047,7 +2113,7 @@ int main(int argc, char *argv[]) {
             DrawTextEx(font, gameLog, (Vector2){10, 25}, 22, 0, fadeRed);
         }
 
-        snprintf(myString, 100, "HEALTH: %d   AMMO: %d    SCORE: %d", health, ammo, score);
+        snprintf(myString, 100, "HEALTH: %d   AMMO: %d    SCORE: %d", phealth, ammo, score);
         DrawText(myString, 10, screenHeight - 24, 22, WHITE);
 
         EndDrawing();
