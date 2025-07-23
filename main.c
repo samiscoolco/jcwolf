@@ -191,6 +191,37 @@ typedef struct
 
 typedef struct
 {
+    short type;
+    short state;
+    short state2;
+    short health;
+    short map;
+    float x, y;
+    int mappos;
+    int dist;
+    float angle;
+    float speed;
+    short map_start;
+    short anim_start;
+    short anim_len;
+    short anim_currframe;
+    bool targeted;
+    bool anim_done;
+    short anim_walk_start;
+    short anim_walk_len;
+    short anim_stand;
+    short anim_pain;
+    short anim_death_start;
+    short anim_death_len;
+    short anim_dead;
+    short anim_shoot_start;
+    short anim_shoot_len;
+    bool anim_dontloop;
+    bool cqc;
+} entity;
+
+typedef struct
+{
     uint8_t type;
     uint8_t state;
     float state2;
@@ -206,6 +237,7 @@ interactable *interactables;
 
 // hopefully you dont need more than this, otherwise i will need intelligent management (i.e using old slots when a sprite is destoryed)
 sprite sp[3000];
+entity ents[3000];
 float wallDepth[3000];
 
 // ovride is if the visual spr needs to be seperate from the tile data
@@ -1337,8 +1369,10 @@ void init() {
     hasPistol = true;
     hasMP40 = false;
     hasChaingun = false;
-
     ammo = 10;
+    // starting ammo debug
+    // ammo = 255;
+
     phealth = 100;
     score = 0;
     ANIM_TIMER = 0.0f;
@@ -1710,7 +1744,7 @@ bool checkLine(float x0, float y0, float x1, float y1) {
                     return false;  // wall blocks view
                 }
             } else {
-                return false;  // wall blocks view
+                return false;
             }
         }
 
@@ -2043,11 +2077,9 @@ int main(int argc, char *argv[]) {
 
         BeginTextureMode(renderTex);
         ClearBackground(DARKGRAY);
-        // DrawRectangle(0, renderHeight / 2, renderWidth, renderHeight / 2, GRAY);
 
         if (mode) {
             drawGame();
-
             drawDoors();
             sortSprites();
             drawSprites();
@@ -2055,9 +2087,22 @@ int main(int argc, char *argv[]) {
 
         if (shooting) {
             shootFrame += 15 * dt;
-            if ((int)shootFrame >= 5) {
-                shootFrame = 0;
-                shooting = false;
+            // Weapon speed logic is hardcoded here.
+            if ((int)shootFrame >= 5 || ((int)shootFrame >= 4 && selectedGun == 3) && IsKeyDown(KEY_LEFT_CONTROL)) {
+                if (IsKeyDown(KEY_LEFT_CONTROL) && ammo > 0) {
+                    if (selectedGun > 1) {
+                        shootFrame = 2;
+                    } else {
+                        shootFrame = 0;
+                    }
+
+                    if (selectedGun > 0) {
+                        ammo--;
+                    }
+                } else {
+                    shootFrame = 0;
+                    shooting = false;
+                }
             }
         }
 
